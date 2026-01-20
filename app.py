@@ -12,13 +12,20 @@ from botbuilder.schema import Activity, ActivityTypes
 
 app = Flask(__name__)
 
-# Bot Framework settings
-SETTINGS = BotFrameworkAdapterSettings(
-    app_id=os.environ.get("MICROSOFT_APP_ID"),
-    app_password=os.environ.get("MICROSOFT_APP_PASSWORD"),
-    app_tenantid=os.environ.get("MICROSOFT_APP_TENANT_ID")
-)
-ADAPTER = BotFrameworkAdapter(SETTINGS)
+# Bot Framework settings - initialized lazily to allow health checks before env vars are set
+ADAPTER = None
+
+def get_adapter():
+    """Get or create Bot Framework adapter."""
+    global ADAPTER
+    if ADAPTER is None:
+        settings = BotFrameworkAdapterSettings(
+            app_id=os.environ.get("MICROSOFT_APP_ID"),
+            app_password=os.environ.get("MICROSOFT_APP_PASSWORD"),
+            app_tenantid=os.environ.get("MICROSOFT_APP_TENANT_ID")
+        )
+        ADAPTER = BotFrameworkAdapter(settings)
+    return ADAPTER
 
 # n8n webhook URL for Q&A
 N8N_QA_WEBHOOK = "https://n8n-production-ac1d.up.railway.app/webhook/ask-question"
@@ -117,7 +124,7 @@ def messages():
         async def call_on_turn(turn_context: TurnContext):
             await on_turn(turn_context)
 
-        task = ADAPTER.process_activity(activity, auth_header, call_on_turn)
+        task = get_adapter().process_activity(activity, auth_header, call_on_turn)
         run_async(task)
 
         return jsonify({"status": "ok"})
