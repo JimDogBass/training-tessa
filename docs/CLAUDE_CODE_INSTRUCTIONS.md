@@ -5,6 +5,7 @@
 RAG-powered training bot for Meraki Talent staff. Users ask questions in Teams, the bot searches training documents in Supabase, and returns AI-generated answers.
 
 **Project Location:** `C:\Projects\training-tessa`
+**GitHub:** `https://github.com/JimDogBass/training-tessa`
 
 ## Architecture
 
@@ -31,12 +32,17 @@ C:\Projects\training-tessa\
 ├── Procfile               # Railway start command
 ├── railway.toml           # Railway configuration
 ├── README.md              # Setup instructions
+├── .gitignore             # Excludes credentials from git
 ├── teams-app/
-│   └── manifest.json      # Teams app manifest (needs App ID + icons)
+│   ├── manifest.json      # Teams app manifest
+│   ├── color.png          # Bot icon (192x192) - Tessa photo
+│   ├── outline.png        # Bot icon (32x32)
+│   └── training-tessa.zip # Ready-to-install Teams app package
 └── docs/
     ├── CLAUDE_CODE_INSTRUCTIONS.md   # This file
-    ├── CREDENTIALS_REFERENCE.md      # API keys and endpoints
-    └── synta-prompt-sharepoint-ingestion.md  # n8n workflow prompt
+    ├── CREDENTIALS_REFERENCE.md      # API keys and endpoints (local only, gitignored)
+    ├── CREDENTIALS_TEMPLATE.md       # Template for credentials (in git)
+    └── synta-prompt-sharepoint-ingestion.md  # n8n workflow prompt (local only, gitignored)
 ```
 
 ---
@@ -57,9 +63,13 @@ C:\Projects\training-tessa\
 | RAG Question Answering | ✅ Working | Test completed successfully |
 | SharePoint App Registration | ✅ Complete | Admin consent granted |
 | SharePoint n8n Credential | ✅ Connected | OAuth2 working |
-| Training Tessa Flask App | ✅ Code Complete | Pending deployment |
-| Training Tessa Azure Bot | ✅ Created | App ID: 070c41c0-02fd-44a8-becd-b8c4d33fb029 |
 | processed_documents table | ✅ Created | Supabase tracking table |
+| Training Tessa Flask App | ✅ Deployed | Railway: `web-production-41f7a.up.railway.app` |
+| Training Tessa Azure Bot | ✅ Created | App ID: 070c41c0-02fd-44a8-becd-b8c4d33fb029 |
+| GitHub Repo | ✅ Created | `https://github.com/JimDogBass/training-tessa` |
+| Railway Deployment | ✅ Live | Auto-deploys from GitHub |
+| Teams Channel | ✅ Enabled | Microsoft Teams Commercial |
+| Teams App | ✅ Installed | Bot available in Teams |
 
 ### Test Results
 - Successfully ingested test document about Meraki Talent
@@ -70,57 +80,45 @@ C:\Projects\training-tessa\
 
 ## WHERE WE LEFT OFF
 
-### Next Task: SharePoint Document Ingestion Workflow
+### Next Task: Build SharePoint Ingestion Workflow & Ingest Documents
 
-SharePoint credential is connected. Now need to build the workflow.
+The Training Tessa bot is deployed and installed in Teams. Now need to:
 
-**Completed Steps:**
-- ✅ Azure App Registration created
-- ✅ Admin consent granted
-- ✅ n8n credential connected successfully
+1. **Build SharePoint Ingestion Workflow in n8n**
+   - Use Synta with the prompt in: `docs/synta-prompt-sharepoint-ingestion.md`
+   - Add credentials to the workflow nodes
 
-**Current Step: Build SharePoint Ingestion Workflow**
+2. **Run the workflow to ingest all ~50 training documents**
+   - Documents are in SharePoint: `/Shared Documents/Agent Content/Training`
+   - File types: .docx, .pptx, .pdf, .doc, .ppt (with images)
 
-Use Synta with the prompt in: `docs/synta-prompt-sharepoint-ingestion.md`
-
-The workflow will:
-1. Pull documents from SharePoint folder: `/Shared Documents/Agent Content/Training`
+**The workflow will:**
+1. Pull documents from SharePoint folder
 2. Extract text from .docx, .pptx, .pdf files
 3. Use GPT-4o vision to describe images in documents
 4. Chunk content and create embeddings
 5. Store in Supabase `documents` table
 
-**Before running workflow, create this Supabase table:**
-```sql
-CREATE TABLE processed_documents (
-  id bigint primary key generated always as identity,
-  filename text not null unique,
-  processed_at timestamp with time zone default now(),
-  chunk_count int,
-  status text default 'success'
-);
-```
-
 **SharePoint Training Docs:**
 - Site: merakitalent.sharepoint.com (root site)
 - Folder: /Shared Documents/Agent Content/Training
-- ~50 docs: .docx, .pptx, .pdf, .doc, .ppt (with images)
+- ~50 docs with images
 
 ---
 
 ## Training Tessa Flask App
 
-### Status: ✅ Code Complete, Pending Deployment
+### Status: ✅ DEPLOYED & LIVE
 
-### Deployment Steps
-1. [x] **Create Azure Bot Registration** - ✅ `training-tessa` created
-2. [ ] **Push to GitHub** - Create repo, push code
-3. [ ] **Deploy to Railway** - Connect GitHub repo
-4. [ ] **Set Environment Variables** - MICROSOFT_APP_ID, MICROSOFT_APP_PASSWORD, MICROSOFT_APP_TENANT_ID
-5. [ ] **Update Messaging Endpoint** - Set Railway URL in Azure Bot config
-6. [ ] **Add Teams Icons** - color.png (192x192), outline.png (32x32)
-7. [ ] **Enable Teams Channel** - Azure Bot → Channels → Teams
-8. [ ] **Install in Teams** - Sideload or admin deploy
+### Deployment Checklist (All Complete)
+- [x] **Create Azure Bot Registration** - `training-tessa` created
+- [x] **Push to GitHub** - `https://github.com/JimDogBass/training-tessa`
+- [x] **Deploy to Railway** - `https://web-production-41f7a.up.railway.app`
+- [x] **Set Environment Variables** - MICROSOFT_APP_ID, MICROSOFT_APP_PASSWORD, MICROSOFT_APP_TENANT_ID
+- [x] **Update Messaging Endpoint** - `https://web-production-41f7a.up.railway.app/api/messages`
+- [x] **Add Teams Icons** - Tessa photo as bot avatar
+- [x] **Enable Teams Channel** - Microsoft Teams Commercial
+- [x] **Install in Teams** - Bot sideloaded and available
 
 ### n8n Integration
 Calls existing webhook:
@@ -132,10 +130,12 @@ Calls existing webhook:
 
 ## Working Production URLs
 
-| Workflow | URL |
-|----------|-----|
+| Service | URL |
+|---------|-----|
+| Training Tessa Bot | `https://web-production-41f7a.up.railway.app` |
 | Document Ingestion | `https://n8n-production-ac1d.up.railway.app/webhook/ingest-document` |
 | Question Answering | `https://n8n-production-ac1d.up.railway.app/webhook/ask-question` |
+| n8n Dashboard | `https://n8n-production-ac1d.up.railway.app` |
 
 ### Ingestion Request Format
 ```bash
@@ -304,12 +304,13 @@ $$;
 
 ### 1. Build SharePoint Ingestion Workflow (n8n)
 - Use Synta prompt in `docs/synta-prompt-sharepoint-ingestion.md`
+- Add credentials to workflow nodes
 - This will auto-ingest training documents into Supabase
 
-### 2. Deploy Training Tessa to Railway
-- Push to GitHub
-- Deploy to Railway
-- Configure Azure Bot + Teams
+### 2. Ingest All Training Documents
+- Run the SharePoint ingestion workflow
+- ~50 documents to process
+- Verify documents appear in Supabase
 
 ### 3. Customizing Bot Responses
 To change the bot's tone/style, edit the **"Build RAG Prompt"** node in the Q&A workflow. The system prompt controls personality, length, and response style.
@@ -324,3 +325,10 @@ To change the bot's tone/style, edit the **"Build RAG Prompt"** node in the Q&A 
 3. Azure OpenAI URL format: `https://{resource}.openai.azure.com/openai/deployments/{deployment}/...`
 4. Supabase needed `metadata` column added to documents table
 5. n8n Merge node should use "Append" mode for optional paths
+6. Bot Framework adapter should initialize lazily to allow health checks before env vars are set
+
+### Bot not responding in Teams?
+- Check Railway logs for errors
+- Verify environment variables are set in Railway
+- Confirm messaging endpoint is correct in Azure Bot config
+- Test the /health endpoint: `https://web-production-41f7a.up.railway.app/health`
