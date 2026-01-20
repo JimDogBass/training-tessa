@@ -1,0 +1,6 @@
+flask
+gunicorn
+httpx
+botbuilder-core
+botbuilder-schema
+aiohttp

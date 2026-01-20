@@ -1,0 +1,21 @@
+# Credentials and secrets (keep local only)
+docs/CREDENTIALS_REFERENCE.md
+docs/synta-prompt-sharepoint-ingestion.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
