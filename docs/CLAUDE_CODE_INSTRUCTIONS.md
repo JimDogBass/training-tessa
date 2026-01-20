@@ -64,6 +64,7 @@ C:\Projects\training-tessa\
 | SharePoint App Registration | ✅ Complete | Admin consent granted |
 | SharePoint n8n Credential | ✅ Connected | OAuth2 working |
 | processed_documents table | ✅ Created | Supabase tracking table |
+| SharePoint Ingestion Workflow | ✅ Built | n8n workflow ready, needs credentials + run |
 | Training Tessa Flask App | ✅ Deployed | Railway: `web-production-41f7a.up.railway.app` |
 | Training Tessa Azure Bot | ✅ Created | App ID: 070c41c0-02fd-44a8-becd-b8c4d33fb029 |
 | GitHub Repo | ✅ Created | `https://github.com/JimDogBass/training-tessa` |
@@ -80,29 +81,37 @@ C:\Projects\training-tessa\
 
 ## WHERE WE LEFT OFF
 
-### Next Task: Build SharePoint Ingestion Workflow & Ingest Documents
+### Next Task: Add Credentials & Run Document Ingestion
 
-The Training Tessa bot is deployed and installed in Teams. Now need to:
+The Training Tessa bot is deployed and installed in Teams. The SharePoint ingestion workflow has been built.
 
-1. **Build SharePoint Ingestion Workflow in n8n**
-   - Use Synta with the prompt in: `docs/synta-prompt-sharepoint-ingestion.md`
-   - Add credentials to the workflow nodes
-
+**Remaining steps:**
+1. **Add credentials to workflow nodes** (if not already done)
 2. **Run the workflow to ingest all ~50 training documents**
-   - Documents are in SharePoint: `/Shared Documents/Agent Content/Training`
-   - File types: .docx, .pptx, .pdf, .doc, .ppt (with images)
-
-**The workflow will:**
-1. Pull documents from SharePoint folder
-2. Extract text from .docx, .pptx, .pdf files
-3. Use GPT-4o vision to describe images in documents
-4. Chunk content and create embeddings
-5. Store in Supabase `documents` table
+3. **Verify documents appear in Supabase**
 
 **SharePoint Training Docs:**
 - Site: merakitalent.sharepoint.com (root site)
 - Folder: /Shared Documents/Agent Content/Training
 - ~50 docs with images
+
+### SharePoint Ingestion Workflow (n8n)
+
+**Workflow nodes:**
+```
+Schedule Trigger → Get Processed Files → List SharePoint Files → Filter New Files
+→ Download File → File Type Switch → Extract DOCX/PPTX/PDF → Merge Extracted Content
+→ Extract Images → Loop Images → GPT-4o Vision → Format Enriched Content
+→ Chunk Content → Send to Ingestion Webhook → Record Processed File
+```
+
+**What it does:**
+1. Lists files in SharePoint training folder
+2. Filters out already-processed files
+3. Downloads and extracts text from .docx, .pptx, .pdf
+4. Extracts images and describes them with GPT-4o Vision
+5. Chunks content and sends to ingestion webhook
+6. Records processed files to avoid re-processing
 
 ---
 
@@ -302,15 +311,19 @@ $$;
 
 ## Remaining Tasks
 
-### 1. Build SharePoint Ingestion Workflow (n8n)
-- Use Synta prompt in `docs/synta-prompt-sharepoint-ingestion.md`
-- Add credentials to workflow nodes
-- This will auto-ingest training documents into Supabase
+### 1. Add Credentials to Workflow Nodes
+The SharePoint ingestion workflow is built. Add credentials to these nodes:
+- **List SharePoint Files** - Microsoft SharePoint OAuth2 credential
+- **Download File** - Microsoft SharePoint OAuth2 credential
+- **GPT-4o Vision** - Azure OpenAI API key
+- **Send to Ingestion Webhook** - Already configured (n8n internal)
+- **Get Processed Files / Record Processed File** - Supabase credential
 
-### 2. Ingest All Training Documents
-- Run the SharePoint ingestion workflow
+### 2. Run Document Ingestion
+- Execute the workflow manually or wait for schedule trigger
 - ~50 documents to process
-- Verify documents appear in Supabase
+- Monitor for errors in n8n execution logs
+- Verify documents appear in Supabase `documents` table
 
 ### 3. Customizing Bot Responses
 To change the bot's tone/style, edit the **"Build RAG Prompt"** node in the Q&A workflow. The system prompt controls personality, length, and response style.
