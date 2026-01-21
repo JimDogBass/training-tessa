@@ -21,7 +21,8 @@ def get_adapter():
     if ADAPTER is None:
         settings = BotFrameworkAdapterSettings(
             app_id=os.environ.get("MICROSOFT_APP_ID"),
-            app_password=os.environ.get("MICROSOFT_APP_PASSWORD")
+            app_password=os.environ.get("MICROSOFT_APP_PASSWORD"),
+            channel_auth_tenant=os.environ.get("MICROSOFT_APP_TENANT_ID")
         )
         ADAPTER = BotFrameworkAdapter(settings)
     return ADAPTER
