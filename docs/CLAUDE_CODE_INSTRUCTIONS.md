@@ -1,5 +1,7 @@
 # Training Tessa - Claude Code Instructions
 
+**Last Updated:** 21 January 2026
+
 ## Project Overview
 
 RAG-powered training bot for Meraki Talent staff. Users ask questions in Teams, the bot searches training documents in Supabase, and returns AI-generated answers.
@@ -14,11 +16,13 @@ RAG-powered training bot for Meraki Talent staff. Users ask questions in Teams, 
 │                    TRAINING TESSA SYSTEM                        │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  DOCUMENT INGESTION (n8n workflow)                             │
-│  SharePoint → Extract Text/Images → Chunk → Embed → Supabase   │
+│  DOCUMENT INGESTION (Python script)                            │
+│  Local Files → Extract Text → n8n Webhook → Chunk → Embed →   │
+│  Supabase                                                       │
 │                                                                 │
 │  Q&A FLOW                                                       │
-│  Teams → Training Tessa (Flask) → n8n Webhook → Supabase/OpenAI │
+│  Teams → Training Tessa (Flask) → n8n Webhook →                │
+│  Supabase/OpenAI → Answer                                       │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -28,6 +32,7 @@ RAG-powered training bot for Meraki Talent staff. Users ask questions in Teams, 
 ```
 C:\Projects\training-tessa\
 ├── app.py                  # Flask bot application
+├── ingest_local_files.py   # Python script to ingest training docs
 ├── requirements.txt        # Python dependencies
 ├── Procfile               # Railway start command
 ├── railway.toml           # Railway configuration
@@ -40,100 +45,33 @@ C:\Projects\training-tessa\
 │   └── training-tessa.zip # Ready-to-install Teams app package
 └── docs/
     ├── CLAUDE_CODE_INSTRUCTIONS.md   # This file
-    ├── CREDENTIALS_REFERENCE.md      # API keys and endpoints (local only, gitignored)
-    ├── CREDENTIALS_TEMPLATE.md       # Template for credentials (in git)
-    └── synta-prompt-sharepoint-ingestion.md  # n8n workflow prompt (local only, gitignored)
+    ├── CREDENTIALS_REFERENCE.md      # API keys and endpoints
+    ├── CREDENTIALS_TEMPLATE.md       # Template for credentials
+    ├── HOW_TO_ADD_DOCUMENTS.md       # Document ingestion guide
+    └── synta-prompt-sharepoint-ingestion.md  # (archived)
 ```
 
 ---
 
-## CURRENT STATUS (Updated 20 Jan 2026)
+## CURRENT STATUS: LIVE
 
-### Completed
+### All Components Working
+
 | Component | Status | Details |
 |-----------|--------|---------|
-| n8n | ✅ Running | `https://n8n-production-ac1d.up.railway.app` |
-| Supabase | ✅ Ready | Project: JimDogBass, pgvector enabled |
-| Azure OpenAI | ✅ Configured | Resource: `meraki-training-bot` |
-| Embedding Model | ✅ Working | `text-embedding-3-small` |
-| Chat Model | ✅ Working | `gpt-4o` |
-| Document Table | ✅ Created | `documents` table with metadata column |
-| Vector Search Function | ✅ Created | `match_documents` RPC function |
-| RAG Document Ingestion | ✅ Published & Working | Production webhook active |
-| RAG Question Answering | ✅ Working | Test completed successfully |
-| SharePoint App Registration | ✅ Complete | Admin consent granted |
-| SharePoint n8n Credential | ✅ Connected | OAuth2 working |
-| processed_documents table | ✅ Created | Supabase tracking table |
-| SharePoint Ingestion Workflow | ✅ Built | n8n workflow ready, needs credentials + run |
-| Training Tessa Flask App | ✅ Deployed | Railway: `web-production-41f7a.up.railway.app` |
-| Training Tessa Azure Bot | ✅ Created | App ID: 070c41c0-02fd-44a8-becd-b8c4d33fb029 |
-| GitHub Repo | ✅ Created | `https://github.com/JimDogBass/training-tessa` |
-| Railway Deployment | ✅ Live | Auto-deploys from GitHub |
-| Teams Channel | ✅ Enabled | Microsoft Teams Commercial |
-| Teams App | ✅ Installed | Bot available in Teams |
+| n8n | Running | `https://n8n-production-ac1d.up.railway.app` |
+| Supabase | Ready | 631 document chunks ingested |
+| Azure OpenAI | Working | gpt-4o + text-embedding-3-small |
+| Training Tessa Flask App | Deployed | `https://web-production-41f7a.up.railway.app` |
+| Azure Bot Registration | Created | App ID: 070c41c0-02fd-44a8-becd-b8c4d33fb029 |
+| Teams App | Installed | Bot available in Teams |
+| Document Ingestion | Working | Via Python script |
+| RAG Q&A | Working | Vector search + GPT-4o answers |
 
-### Test Results
-- Successfully ingested test document about Meraki Talent
-- Successfully queried: "What is Meraki Talent?"
-- Got accurate response based on ingested document
-
----
-
-## WHERE WE LEFT OFF
-
-### Next Task: Add Credentials & Run Document Ingestion
-
-The Training Tessa bot is deployed and installed in Teams. The SharePoint ingestion workflow has been built.
-
-**Remaining steps:**
-1. **Add credentials to workflow nodes** (if not already done)
-2. **Run the workflow to ingest all ~50 training documents**
-3. **Verify documents appear in Supabase**
-
-**SharePoint Training Docs:**
-- Site: merakitalent.sharepoint.com (root site)
-- Folder: /Shared Documents/Agent Content/Training
-- ~50 docs with images
-
-### SharePoint Ingestion Workflow (n8n)
-
-**Workflow nodes:**
-```
-Schedule Trigger → Get Processed Files → List SharePoint Files → Filter New Files
-→ Download File → File Type Switch → Extract DOCX/PPTX/PDF → Merge Extracted Content
-→ Extract Images → Loop Images → GPT-4o Vision → Format Enriched Content
-→ Chunk Content → Send to Ingestion Webhook → Record Processed File
-```
-
-**What it does:**
-1. Lists files in SharePoint training folder
-2. Filters out already-processed files
-3. Downloads and extracts text from .docx, .pptx, .pdf
-4. Extracts images and describes them with GPT-4o Vision
-5. Chunks content and sends to ingestion webhook
-6. Records processed files to avoid re-processing
-
----
-
-## Training Tessa Flask App
-
-### Status: ✅ DEPLOYED & LIVE
-
-### Deployment Checklist (All Complete)
-- [x] **Create Azure Bot Registration** - `training-tessa` created
-- [x] **Push to GitHub** - `https://github.com/JimDogBass/training-tessa`
-- [x] **Deploy to Railway** - `https://web-production-41f7a.up.railway.app`
-- [x] **Set Environment Variables** - MICROSOFT_APP_ID, MICROSOFT_APP_PASSWORD, MICROSOFT_APP_TENANT_ID
-- [x] **Update Messaging Endpoint** - `https://web-production-41f7a.up.railway.app/api/messages`
-- [x] **Add Teams Icons** - Tessa photo as bot avatar
-- [x] **Enable Teams Channel** - Microsoft Teams Commercial
-- [x] **Install in Teams** - Bot sideloaded and available
-
-### n8n Integration
-Calls existing webhook:
-- URL: `https://n8n-production-ac1d.up.railway.app/webhook/ask-question`
-- Method: POST
-- Body: `{"question": "user's question"}`
+### Documents Ingested
+- 35 training documents successfully ingested
+- 631 text chunks with embeddings in Supabase
+- 4 files skipped (image-based PDFs with no extractable text)
 
 ---
 
@@ -142,64 +80,65 @@ Calls existing webhook:
 | Service | URL |
 |---------|-----|
 | Training Tessa Bot | `https://web-production-41f7a.up.railway.app` |
+| Bot Health Check | `https://web-production-41f7a.up.railway.app/health` |
 | Document Ingestion | `https://n8n-production-ac1d.up.railway.app/webhook/ingest-document` |
 | Question Answering | `https://n8n-production-ac1d.up.railway.app/webhook/ask-question` |
 | n8n Dashboard | `https://n8n-production-ac1d.up.railway.app` |
 
-### Ingestion Request Format
-```bash
-curl -X POST https://n8n-production-ac1d.up.railway.app/webhook/ingest-document \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Your document content here", "source_document": "document-name"}'
-```
+---
 
-### Question Request Format
-```bash
-curl -X POST https://n8n-production-ac1d.up.railway.app/webhook/ask-question \
-  -H "Content-Type: application/json" \
-  -d '{"question": "Your question here"}'
-```
+## How to Add New Documents
+
+**See:** `docs/HOW_TO_ADD_DOCUMENTS.md`
+
+Quick version:
+1. Add files to `C:\Users\JoelBentley\OneDrive - Meraki Talent\Agent Content\Training`
+2. Run `python ingest_local_files.py` from the project folder
+3. Documents will be processed and added to Supabase
 
 ---
 
-## Code Fixes Applied to n8n Workflows
+## n8n Workflow Details
 
-### 1. RAG Document Ingestion
-- Fixed Merge node: Changed to "Append" mode with 2 inputs
-- Uses `text` field (not `content`) for document content
+### RAG Document Ingestion Workflow
+Receives documents via webhook, chunks them, creates embeddings, stores in Supabase.
 
-### 2. RAG Question Answering - Create Question Embedding Node
-```javascript
-const question = $input.first().json.question;
-const url = 'https://meraki-training-bot.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2025-03-01-preview';
-const apiKey = 'YOUR_AZURE_OPENAI_KEY';
-
-const response = await this.helpers.httpRequest({
-  method: 'POST',
-  url: url,
-  headers: {
-    'api-key': apiKey,
-    'Content-Type': 'application/json'
-  },
-  body: { input: question }
-});
-
-return [{
-  json: {
-    question: question,
-    question_embedding: response.data[0].embedding,
-    timestamp: $input.first().json.timestamp
-  }
-}];
+**Webhook:** POST to `/webhook/ingest-document`
+```json
+{
+  "text": "Document content here",
+  "source_document": "filename.docx"
+}
 ```
 
-### 3. RAG Question Answering - Vector Similarity Search Node
+### RAG Question Answering Workflow
+Receives questions, searches similar documents, generates AI answer.
+
+**Webhook:** POST to `/webhook/ask-question`
+```json
+{
+  "question": "User's question here"
+}
+```
+
+**Response:**
+```json
+{
+  "question": "...",
+  "answer": "AI-generated answer",
+  "sources": ["document1.docx", "document2.pdf"],
+  "chunk_count": 5
+}
+```
+
+### Key n8n Node Configurations
+
+#### Vector Similarity Search Node
 ```javascript
 const item = $input.first();
 const questionEmbedding = item.json.question_embedding;
 const SUPABASE_URL = 'https://uwxsflcpaigcygfhxzzl.supabase.co';
 const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
-const TOP_K = 5;
 
 const embeddingStr = '[' + questionEmbedding.join(',') + ']';
 
@@ -213,8 +152,8 @@ const response = await this.helpers.httpRequest({
   },
   body: {
     query_embedding: embeddingStr,
-    match_threshold: 0.7,
-    match_count: TOP_K
+    match_threshold: 0.1,
+    match_count: 5
   }
 });
 
@@ -228,56 +167,25 @@ return [{
 }];
 ```
 
-### 4. RAG Question Answering - Generate Answer Node
-```javascript
-const item = $input.first();
-const systemPrompt = item.json.system_prompt;
-const userPrompt = item.json.user_prompt;
-
-const AZURE_OPENAI_ENDPOINT = 'https://meraki-training-bot.openai.azure.com';
-const AZURE_OPENAI_KEY = 'YOUR_AZURE_OPENAI_KEY';
-const DEPLOYMENT_NAME = 'gpt-4o';
-const API_VERSION = '2025-03-01-preview';
-
-const response = await this.helpers.httpRequest({
-  method: 'POST',
-  url: AZURE_OPENAI_ENDPOINT + '/openai/deployments/' + DEPLOYMENT_NAME + '/chat/completions?api-version=' + API_VERSION,
-  headers: {
-    'api-key': AZURE_OPENAI_KEY,
-    'Content-Type': 'application/json'
-  },
-  body: {
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
-    ],
-    temperature: 0.7,
-    max_tokens: 800,
-    top_p: 0.95
-  }
-});
-
-const answer = response.choices[0].message.content;
-
-return [{
-  json: {
-    question: item.json.question,
-    answer: answer,
-    sources: item.json.sources,
-    chunk_count: item.json.chunk_count,
-    timestamp: new Date().toISOString()
-  }
-}];
-```
-
-### 5. Return Answer Node
-- Changed to "Respond With" → "First Incoming Item" (instead of custom JSON)
+**Important:** The embedding must be passed as a string `'[0.1,0.2,...]'` not an array.
 
 ---
 
-## Supabase SQL Functions Created
+## Supabase Configuration
 
-### match_documents function
+### Documents Table
+```sql
+CREATE TABLE documents (
+  id BIGSERIAL PRIMARY KEY,
+  content TEXT,
+  embedding VECTOR(1536),
+  source_document TEXT,
+  metadata JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+### match_documents Function
 ```sql
 CREATE OR REPLACE FUNCTION match_documents(
   query_embedding vector(1536),
@@ -309,39 +217,42 @@ $$;
 
 ---
 
-## Remaining Tasks
+## Troubleshooting
 
-### 1. Add Credentials to Workflow Nodes
-The SharePoint ingestion workflow is built. Add credentials to these nodes:
-- **List SharePoint Files** - Microsoft SharePoint OAuth2 credential
-- **Download File** - Microsoft SharePoint OAuth2 credential
-- **GPT-4o Vision** - Azure OpenAI API key
-- **Send to Ingestion Webhook** - Already configured (n8n internal)
-- **Get Processed Files / Record Processed File** - Supabase credential
+### Bot not responding in Teams
+1. Check Railway logs: `https://railway.app` → training-tessa → Deployments → Logs
+2. Verify health: `curl https://web-production-41f7a.up.railway.app/health`
+3. Check Azure Bot messaging endpoint is `https://web-production-41f7a.up.railway.app/api/messages`
 
-### 2. Run Document Ingestion
-- Execute the workflow manually or wait for schedule trigger
-- ~50 documents to process
-- Monitor for errors in n8n execution logs
-- Verify documents appear in Supabase `documents` table
+### Q&A returns "I don't have that information"
+1. Check if `chunk_count > 0` in webhook response
+2. If 0, vector search isn't finding matches - lower `match_threshold`
+3. If > 0, adjust the system prompt in Build RAG Prompt node
 
-### 3. Customizing Bot Responses
-To change the bot's tone/style, edit the **"Build RAG Prompt"** node in the Q&A workflow. The system prompt controls personality, length, and response style.
+### Vector search returns 0 chunks
+1. Verify documents are in Supabase
+2. Check embedding format is string `'[...]'` not array
+3. Lower match_threshold to 0.1 or lower
+
+### Document ingestion fails
+1. Check n8n execution logs
+2. Verify Azure OpenAI API key is valid
+3. Check Supabase connection
 
 ---
 
-## Troubleshooting
+## Key Fixes Applied
 
-### Key fixes discovered during setup:
-1. n8n Code nodes use `this.helpers.httpRequest()` not `fetch` or `$request`
-2. Azure OpenAI uses `api-key` header (not `Authorization: Bearer`)
-3. Azure OpenAI URL format: `https://{resource}.openai.azure.com/openai/deployments/{deployment}/...`
-4. Supabase needed `metadata` column added to documents table
-5. n8n Merge node should use "Append" mode for optional paths
-6. Bot Framework adapter should initialize lazily to allow health checks before env vars are set
+1. **BotFrameworkAdapterSettings** - Removed invalid `app_tenantid` parameter
+2. **Vector search embedding format** - Must be string `'[...]'` for Supabase RPC
+3. **match_threshold** - Lowered to 0.1 for better matching
+4. **System prompt** - Made less strict to give helpful answers
 
-### Bot not responding in Teams?
-- Check Railway logs for errors
-- Verify environment variables are set in Railway
-- Confirm messaging endpoint is correct in Azure Bot config
-- Test the /health endpoint: `https://web-production-41f7a.up.railway.app/health`
+---
+
+## Files NOT in Git (gitignored)
+
+- `docs/CREDENTIALS_REFERENCE.md` - Contains API keys
+- `docs/synta-prompt-sharepoint-ingestion.md` - Archived
+- `.env` - Environment variables
+- `__pycache__/` - Python cache
