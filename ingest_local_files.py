@@ -19,16 +19,26 @@ import google.generativeai as genai
 TRAINING_FOLDER = r"C:\Users\JoelBentley\OneDrive - Meraki Talent\Agent Content\Training"
 
 # Gemini API (for embeddings and image descriptions)
-GEMINI_API_KEY = "AIzaSyDwsuZ9p3p05k_dHRH79jG2S_8NN3z1ZH4"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GEMINI_EMBEDDING_MODEL = "text-embedding-004"
 GEMINI_VISION_MODEL = "gemini-2.5-pro-preview-05-06"
+
+if not GEMINI_API_KEY:
+    print("ERROR: GEMINI_API_KEY environment variable not set.")
+    print("Set it with: set GEMINI_API_KEY=your-api-key")
+    sys.exit(1)
 
 # Configure Gemini
 genai.configure(api_key=GEMINI_API_KEY)
 
 # Supabase
-SUPABASE_URL = "https://uwxsflcpaigcygfhxzzl.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3eHNmbGNwYWlnY3lnZmh4enpsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4MzM3NjcsImV4cCI6MjA4NDQwOTc2N30.6RmwR3lp4hPa8RqVSli1QDv-nzNHdQJVuMK9mRVXzGk"
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://uwxsflcpaigcygfhxzzl.supabase.co")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+
+if not SUPABASE_KEY:
+    print("ERROR: SUPABASE_KEY environment variable not set.")
+    print("Set it with: set SUPABASE_KEY=your-supabase-key")
+    sys.exit(1)
 
 # Chunking settings
 CHUNK_SIZE = 1000  # characters per chunk
