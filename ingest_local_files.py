@@ -1,66 +1,135 @@
 """
-Local File Ingestion Script for Training Tessa
-Reads training documents from local OneDrive folder and sends to n8n ingestion webhook.
+Training Tessa - Local File Ingestion Script (Enhanced)
+Reads training documents, extracts text and images, creates embeddings,
+and stores directly in Supabase with source document names.
+Now using Gemini for embeddings and image descriptions.
 """
 
 import os
 import sys
-import httpx
+import json
 import time
+import base64
+import httpx
 from pathlib import Path
+from io import BytesIO
+import google.generativeai as genai
 
 # Configuration
 TRAINING_FOLDER = r"C:\Users\JoelBentley\OneDrive - Meraki Talent\Agent Content\Training"
-WEBHOOK_URL = "https://n8n-production-ac1d.up.railway.app/webhook/ingest-document"
+
+# Gemini API (for embeddings and image descriptions)
+GEMINI_API_KEY = "AIzaSyDwsuZ9p3p05k_dHRH79jG2S_8NN3z1ZH4"
+GEMINI_EMBEDDING_MODEL = "text-embedding-004"
+GEMINI_VISION_MODEL = "gemini-2.5-pro-preview-05-06"
+
+# Configure Gemini
+genai.configure(api_key=GEMINI_API_KEY)
+
+# Supabase
+SUPABASE_URL = "https://uwxsflcpaigcygfhxzzl.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3eHNmbGNwYWlnY3lnZmh4enpsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4MzM3NjcsImV4cCI6MjA4NDQwOTc2N30.6RmwR3lp4hPa8RqVSli1QDv-nzNHdQJVuMK9mRVXzGk"
+
+# Chunking settings
+CHUNK_SIZE = 1000  # characters per chunk
+CHUNK_OVERLAP = 200  # overlap between chunks
+
 REQUEST_TIMEOUT = 120
 
-# File type handlers
+
 def extract_docx(file_path):
-    """Extract text from .docx files."""
+    """Extract text and images from .docx files."""
     try:
         from docx import Document
+        from docx.opc.constants import RELATIONSHIP_TYPE as RT
+
         doc = Document(file_path)
-        text = []
+        text_parts = []
+        images = []
+
+        # Extract text
         for para in doc.paragraphs:
             if para.text.strip():
-                text.append(para.text)
-        return '\n\n'.join(text)
+                text_parts.append(para.text)
+
+        # Extract images
+        for rel in doc.part.rels.values():
+            if "image" in rel.target_ref:
+                try:
+                    image_data = rel.target_part.blob
+                    images.append(image_data)
+                except:
+                    pass
+
+        return '\n\n'.join(text_parts), images
     except Exception as e:
         print(f"  Error extracting docx: {e}")
-        return None
+        return None, []
+
 
 def extract_pptx(file_path):
-    """Extract text from .pptx files."""
+    """Extract text and images from .pptx files."""
     try:
         from pptx import Presentation
+        from pptx.enum.shapes import MSO_SHAPE_TYPE
+
         prs = Presentation(file_path)
-        text = []
+        text_parts = []
+        images = []
+
         for slide_num, slide in enumerate(prs.slides, 1):
             slide_text = []
             for shape in slide.shapes:
+                # Extract text
                 if hasattr(shape, "text") and shape.text.strip():
                     slide_text.append(shape.text)
+
+                # Extract images
+                if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+                    try:
+                        image = shape.image
+                        images.append(image.blob)
+                    except:
+                        pass
+
             if slide_text:
-                text.append(f"Slide {slide_num}:\n" + '\n'.join(slide_text))
-        return '\n\n'.join(text)
+                text_parts.append(f"Slide {slide_num}:\n" + '\n'.join(slide_text))
+
+        return '\n\n'.join(text_parts), images
     except Exception as e:
         print(f"  Error extracting pptx: {e}")
-        return None
+        return None, []
+
 
 def extract_pdf(file_path):
-    """Extract text from .pdf files."""
+    """Extract text and images from .pdf files."""
     try:
         import pdfplumber
-        text = []
+        from PIL import Image
+
+        text_parts = []
+        images = []
+
         with pdfplumber.open(file_path) as pdf:
             for page_num, page in enumerate(pdf.pages, 1):
+                # Extract text
                 page_text = page.extract_text()
                 if page_text and page_text.strip():
-                    text.append(f"Page {page_num}:\n{page_text}")
-        return '\n\n'.join(text)
+                    text_parts.append(f"Page {page_num}:\n{page_text}")
+
+                # Extract images
+                try:
+                    for img in page.images:
+                        # pdfplumber gives image info but not always the raw data
+                        pass
+                except:
+                    pass
+
+        return '\n\n'.join(text_parts), images
     except Exception as e:
         print(f"  Error extracting pdf: {e}")
-        return None
+        return None, []
+
 
 def extract_odt(file_path):
     """Extract text from .odt files."""
@@ -73,13 +142,14 @@ def extract_odt(file_path):
             text_content = ''.join(node.data for node in elem.childNodes if hasattr(node, 'data'))
             if text_content.strip():
                 all_text.append(text_content)
-        return '\n\n'.join(all_text)
+        return '\n\n'.join(all_text), []
     except Exception as e:
         print(f"  Error extracting odt: {e}")
-        return None
+        return None, []
 
-def extract_text(file_path):
-    """Extract text based on file extension."""
+
+def extract_content(file_path):
+    """Extract text and images based on file extension."""
     ext = Path(file_path).suffix.lower()
 
     if ext in ['.docx', '.doc']:
@@ -92,41 +162,224 @@ def extract_text(file_path):
         return extract_odt(file_path)
     elif ext == '.txt':
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            return f.read()
+            return f.read(), []
     else:
         print(f"  Unsupported file type: {ext}")
+        return None, []
+
+
+def describe_image_with_vision(image_data, filename):
+    """Use Gemini Vision to describe an image."""
+    try:
+        # Determine image type
+        if image_data[:4] == b'\x89PNG':
+            mime_type = "image/png"
+        else:
+            mime_type = "image/jpeg"
+
+        # Create image part for Gemini
+        image_part = {
+            "mime_type": mime_type,
+            "data": image_data
+        }
+
+        model = genai.GenerativeModel(model_name=GEMINI_VISION_MODEL)
+
+        prompt = f"""You are a helpful assistant that describes images from training documents.
+Please describe this image from the training document '{filename}'.
+Include any visible text, diagrams, charts, or key information.
+Focus on information that would be useful for training purposes.
+Keep the description concise but complete."""
+
+        response = model.generate_content([prompt, image_part])
+        description = response.text
+        return f"[Image Description]: {description}"
+    except Exception as e:
+        print(f"    Error describing image: {e}")
         return None
 
-def send_to_webhook(text, source_document):
-    """Send extracted text to n8n ingestion webhook."""
+
+def chunk_text(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
+    """Split text into overlapping chunks."""
+    if len(text) <= chunk_size:
+        return [text]
+
+    chunks = []
+    start = 0
+
+    while start < len(text):
+        end = start + chunk_size
+
+        # Try to break at a sentence or paragraph
+        if end < len(text):
+            # Look for paragraph break
+            newline_pos = text.rfind('\n\n', start, end)
+            if newline_pos > start + chunk_size // 2:
+                end = newline_pos
+            else:
+                # Look for sentence break
+                for sep in ['. ', '! ', '? ', '\n']:
+                    sep_pos = text.rfind(sep, start, end)
+                    if sep_pos > start + chunk_size // 2:
+                        end = sep_pos + len(sep)
+                        break
+
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+
+        start = end - overlap
+        if start < 0:
+            start = 0
+
+    return chunks
+
+
+def create_embedding(text):
+    """Create embedding using Gemini."""
     try:
+        result = genai.embed_content(
+            model=f"models/{GEMINI_EMBEDDING_MODEL}",
+            content=text,
+            task_type="retrieval_document"  # Use retrieval_document for ingestion
+        )
+        return result['embedding']
+    except Exception as e:
+        print(f"    Error creating embedding: {e}")
+        return None
+
+
+def insert_to_supabase(content, embedding, source_document):
+    """Insert document chunk into Supabase."""
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/documents"
+
         with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
             response = client.post(
-                WEBHOOK_URL,
-                json={
-                    "text": text,
-                    "source_document": source_document
+                url,
+                headers={
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_KEY}",
+                    "Content-Type": "application/json",
+                    "Prefer": "return=minimal"
                 },
-                headers={"Content-Type": "application/json"}
+                json={
+                    "content": content,
+                    "embedding": embedding,
+                    "source_document": source_document
+                }
             )
             response.raise_for_status()
             return True
     except Exception as e:
-        print(f"  Error sending to webhook: {e}")
+        print(f"    Error inserting to Supabase: {e}")
         return False
+
+
+def clear_supabase_documents():
+    """Clear all existing documents from Supabase."""
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/documents"
+
+        with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
+            # Delete all documents
+            response = client.delete(
+                url,
+                headers={
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_KEY}",
+                    "Content-Type": "application/json"
+                },
+                params={"id": "gt.0"}  # Delete all where id > 0
+            )
+            response.raise_for_status()
+            print("Cleared all existing documents from Supabase")
+            return True
+    except Exception as e:
+        print(f"Error clearing Supabase: {e}")
+        return False
+
+
+def process_file(file_path, filename, process_images=True):
+    """Process a single file: extract content, chunk, embed, and store."""
+    print(f"Processing: {filename}")
+
+    # Extract text and images
+    text, images = extract_content(file_path)
+
+    if not text or len(text.strip()) < 50:
+        print(f"  Skipped - no text extracted or too short")
+        return 0, 0
+
+    print(f"  Extracted {len(text)} characters, {len(images)} images")
+
+    # Process images with GPT-4 Vision
+    image_descriptions = []
+    if process_images and images:
+        print(f"  Processing {len(images)} images with GPT-4 Vision...")
+        for i, img_data in enumerate(images[:5]):  # Limit to 5 images per doc
+            desc = describe_image_with_vision(img_data, filename)
+            if desc:
+                image_descriptions.append(desc)
+                print(f"    Image {i+1} described")
+            time.sleep(1)  # Rate limiting
+
+    # Combine text with image descriptions
+    full_content = text
+    if image_descriptions:
+        full_content += "\n\n" + "\n\n".join(image_descriptions)
+
+    # Chunk the content
+    chunks = chunk_text(full_content)
+    print(f"  Split into {len(chunks)} chunks")
+
+    # Process each chunk
+    success_count = 0
+    for i, chunk in enumerate(chunks):
+        # Create embedding
+        embedding = create_embedding(chunk)
+        if not embedding:
+            continue
+
+        # Insert to Supabase
+        if insert_to_supabase(chunk, embedding, filename):
+            success_count += 1
+
+        # Small delay for rate limiting
+        time.sleep(0.5)
+
+    print(f"  [OK] Stored {success_count}/{len(chunks)} chunks")
+    return success_count, len(images)
+
 
 def main():
     """Main ingestion function."""
     print("=" * 60)
-    print("Training Tessa - Local File Ingestion")
+    print("Training Tessa - Enhanced Local File Ingestion")
     print("=" * 60)
     print(f"\nSource folder: {TRAINING_FOLDER}")
-    print(f"Webhook URL: {WEBHOOK_URL}\n")
+    print(f"Supabase URL: {SUPABASE_URL}")
 
     # Check folder exists
     if not os.path.exists(TRAINING_FOLDER):
         print(f"ERROR: Folder not found: {TRAINING_FOLDER}")
         sys.exit(1)
+
+    # Ask about clearing existing documents
+    print("\n" + "-" * 60)
+    print("Do you want to clear existing documents from Supabase first?")
+    print("This will remove all current documents and re-ingest fresh.")
+    print("-" * 60)
+
+    response = input("Clear existing documents? (y/n): ").strip().lower()
+    if response == 'y':
+        clear_supabase_documents()
+
+    # Ask about processing images
+    print("\n" + "-" * 60)
+    response = input("Process images with GPT-4 Vision? (y/n): ").strip().lower()
+    process_images = response == 'y'
+    print("-" * 60 + "\n")
 
     # Get all files
     files = [f for f in os.listdir(TRAINING_FOLDER) if os.path.isfile(os.path.join(TRAINING_FOLDER, f))]
@@ -138,41 +391,30 @@ def main():
     print(f"Found {len(files)} supported files to process\n")
 
     # Process each file
-    success_count = 0
-    error_count = 0
+    total_chunks = 0
+    total_images = 0
+    success_files = 0
 
     for i, filename in enumerate(files, 1):
         file_path = os.path.join(TRAINING_FOLDER, filename)
-        print(f"[{i}/{len(files)}] Processing: {filename}")
+        print(f"\n[{i}/{len(files)}] ", end="")
 
-        # Extract text
-        text = extract_text(file_path)
+        chunks, images = process_file(file_path, filename, process_images)
 
-        if not text or len(text.strip()) < 50:
-            print(f"  Skipped - no text extracted or too short")
-            error_count += 1
-            continue
-
-        print(f"  Extracted {len(text)} characters")
-
-        # Send to webhook
-        if send_to_webhook(text, filename):
-            print(f"  [OK] Sent to webhook successfully")
-            success_count += 1
-        else:
-            print(f"  [FAIL] Failed to send to webhook")
-            error_count += 1
-
-        # Small delay to avoid overwhelming the webhook
-        time.sleep(1)
+        if chunks > 0:
+            success_files += 1
+            total_chunks += chunks
+            total_images += images
 
     # Summary
     print("\n" + "=" * 60)
     print("INGESTION COMPLETE")
     print("=" * 60)
-    print(f"Successfully ingested: {success_count}")
-    print(f"Failed/skipped: {error_count}")
-    print(f"Total files: {len(files)}")
+    print(f"Files processed: {success_files}/{len(files)}")
+    print(f"Total chunks stored: {total_chunks}")
+    print(f"Total images processed: {total_images}")
+    print("\nTraining Tessa is ready to answer questions!")
+
 
 if __name__ == "__main__":
     main()

@@ -33,15 +33,10 @@ def get_adapter():
 # Q&A CONFIGURATION - All secrets loaded from environment variables
 # =============================================================================
 
-# Gemini API
+# Gemini API (used for both embeddings and answer generation)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GEMINI_MODEL = "gemini-2.5-pro-preview-05-06"
-
-# Azure OpenAI (for embeddings - keep for compatibility with existing vectors)
-AZURE_OPENAI_ENDPOINT = os.environ.get("AZURE_OPENAI_ENDPOINT", "https://meraki-training-bot.openai.azure.com")
-AZURE_OPENAI_KEY = os.environ.get("AZURE_OPENAI_KEY")
-EMBEDDING_DEPLOYMENT = "text-embedding-3-small"
-API_VERSION = "2025-03-01-preview"
+GEMINI_EMBEDDING_MODEL = "text-embedding-004"
 
 # Supabase
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://uwxsflcpaigcygfhxzzl.supabase.co")
@@ -89,22 +84,14 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 
 def create_embedding(text):
-    """Create embedding using Azure OpenAI."""
+    """Create embedding using Gemini."""
     try:
-        url = f"{AZURE_OPENAI_ENDPOINT}/openai/deployments/{EMBEDDING_DEPLOYMENT}/embeddings?api-version={API_VERSION}"
-
-        with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
-            response = client.post(
-                url,
-                headers={
-                    "api-key": AZURE_OPENAI_KEY,
-                    "Content-Type": "application/json"
-                },
-                json={"input": text}
-            )
-            response.raise_for_status()
-            result = response.json()
-            return result['data'][0]['embedding']
+        result = genai.embed_content(
+            model=f"models/{GEMINI_EMBEDDING_MODEL}",
+            content=text,
+            task_type="retrieval_query"
+        )
+        return result['embedding']
     except Exception as e:
         print(f"Error creating embedding: {e}")
         return None
