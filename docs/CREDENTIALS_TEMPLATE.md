@@ -3,52 +3,40 @@
 This file lists the credentials and environment variables needed for the project.
 **Actual values are stored locally in CREDENTIALS_REFERENCE.md (not in git).**
 
-## n8n Instance
+## Google Gemini API
 
-- **URL**: https://n8n-production-ac1d.up.railway.app
-- **Hosted on**: Railway
+- **API Key**: `[GEMINI_API_KEY]`
+- **Get one at**: https://aistudio.google.com/apikey
+
+### Models Used
+
+| Model | Purpose |
+|-------|---------|
+| gemini-2.5-pro | Answer generation |
+| gemini-2.5-flash | Image descriptions (ingestion) |
+| text-embedding-004 | Document/query embeddings (768 dimensions) |
 
 ## Supabase
 
-- **Project URL**: `https://[PROJECT_ID].supabase.co`
-- **Table**: documents (with columns: id, content, embedding, source_document, metadata, created_at)
-- **Anon Key**: `[SUPABASE_ANON_KEY]`
+- **Project URL**: `https://uwxsflcpaigcygfhxzzl.supabase.co`
+- **Table**: documents (columns: id, content, embedding vector(768), source_document, metadata, created_at)
+- **Anon Key**: `[SUPABASE_KEY]`
 
-## Azure OpenAI
+### match_documents Function
 
-- **Resource Name**: meraki-training-bot
-- **Endpoint**: `https://meraki-training-bot.openai.azure.com/`
-- **Region**: uksouth
-- **API Version**: 2025-03-01-preview
-- **API Key**: `[AZURE_OPENAI_KEY]`
-
-### Deployments
-
-| Model | Deployment Name | Purpose |
-|-------|-----------------|---------|
-| gpt-4o | gpt-4o | Chat/answers |
-| text-embedding-3-small | text-embedding-3-small | Document embeddings |
-
-## Webhook URLs
-
-### Production URLs (ACTIVE)
-- **Ingest**: https://n8n-production-ac1d.up.railway.app/webhook/ingest-document
-- **Question**: https://n8n-production-ac1d.up.railway.app/webhook/ask-question
-
-## SharePoint Integration
-
-### Azure App Registration
-- **App Name**: n8n-sharepoint-integration
-- **Client ID**: `[SHAREPOINT_CLIENT_ID]`
-- **Tenant ID**: `[TENANT_ID]`
-- **Client Secret**: `[SHAREPOINT_CLIENT_SECRET]`
-- **Permissions**: Files.Read.All, Sites.Read.All, User.Read
-
-### SharePoint Training Docs Location
-- **Site**: merakitalent.sharepoint.com (root site)
-- **Folder Path**: /Shared Documents/Agent Content/Training
-- **Document Count**: ~50 files
-- **File Types**: .docx, .pptx, .pdf, .doc, .ppt (with images)
+```sql
+CREATE OR REPLACE FUNCTION match_documents(
+  query_embedding vector(768),
+  match_threshold float DEFAULT 0.7,
+  match_count int DEFAULT 5
+)
+RETURNS TABLE (
+  id bigint,
+  content text,
+  source_document text,
+  similarity float
+)
+```
 
 ## Training Tessa Azure Bot
 
@@ -57,15 +45,34 @@ This file lists the credentials and environment variables needed for the project
 - **Tenant ID**: `[MICROSOFT_APP_TENANT_ID]`
 - **Client Secret**: `[MICROSOFT_APP_PASSWORD]`
 - **Bot Type**: Single Tenant
-- **Messaging Endpoint**: `https://[RAILWAY_URL]/api/messages`
+- **Messaging Endpoint**: `https://web-production-41f7a.up.railway.app/api/messages`
 
-### Railway Environment Variables
+## Railway Environment Variables
 
 ```
 MICROSOFT_APP_ID=[your-app-id]
 MICROSOFT_APP_PASSWORD=[your-client-secret]
 MICROSOFT_APP_TENANT_ID=[your-tenant-id]
+GEMINI_API_KEY=[your-gemini-key]
+SUPABASE_KEY=[your-supabase-key]
 ```
+
+## Local Environment Variables (for ingestion script)
+
+```cmd
+set GEMINI_API_KEY=[your-gemini-key]
+set SUPABASE_KEY=[your-supabase-key]
+```
+
+## Quick Links
+
+| Service | URL |
+|---------|-----|
+| Bot Health | https://web-production-41f7a.up.railway.app/health |
+| Railway Dashboard | https://railway.app |
+| Supabase Dashboard | https://supabase.com/dashboard |
+| Google AI Studio | https://aistudio.google.com |
+| GitHub Repo | https://github.com/JimDogBass/training-tessa |
 
 ---
 

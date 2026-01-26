@@ -35,7 +35,7 @@ def get_adapter():
 
 # Gemini API (used for both embeddings and answer generation)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-GEMINI_MODEL = "gemini-2.5-pro-preview-05-06"
+GEMINI_MODEL = "gemini-2.5-pro"
 GEMINI_EMBEDDING_MODEL = "text-embedding-004"
 
 # Supabase

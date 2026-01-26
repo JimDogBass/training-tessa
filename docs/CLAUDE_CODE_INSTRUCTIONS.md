@@ -1,10 +1,10 @@
 # Training Tessa - Claude Code Instructions
 
-**Last Updated:** 21 January 2026
+**Last Updated:** 26 January 2026
 
 ## Project Overview
 
-RAG-powered training bot for Meraki Talent staff. Users ask questions in Teams, the bot searches training documents in Supabase, and returns AI-generated answers.
+RAG-powered training bot for Meraki Talent staff. Users ask questions in Teams, the bot searches training documents in Supabase, and returns AI-generated answers with source citations.
 
 **Project Location:** `C:\Projects\training-tessa`
 **GitHub:** `https://github.com/JimDogBass/training-tessa`
@@ -16,13 +16,14 @@ RAG-powered training bot for Meraki Talent staff. Users ask questions in Teams, 
 │                    TRAINING TESSA SYSTEM                        │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  DOCUMENT INGESTION (Python script)                            │
-│  Local Files → Extract Text → n8n Webhook → Chunk → Embed →   │
-│  Supabase                                                       │
+│  DOCUMENT INGESTION (Python script - direct to Supabase)       │
+│  Local Files → Extract Text & Images → Gemini 2.5 Flash        │
+│  describes images → Chunk (1000 chars/200 overlap) → Gemini    │
+│  text-embedding-004 → Direct insert to Supabase (768-dim)      │
 │                                                                 │
-│  Q&A FLOW                                                       │
-│  Teams → Training Tessa (Flask) → n8n Webhook →                │
-│  Supabase/OpenAI → Answer                                       │
+│  Q&A FLOW (Built into Flask app - no n8n)                      │
+│  Teams → Training Tessa (Flask) → Gemini embedding →           │
+│  Supabase Vector Search → Gemini 2.5 Pro → Answer with sources │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -31,7 +32,7 @@ RAG-powered training bot for Meraki Talent staff. Users ask questions in Teams, 
 
 ```
 C:\Projects\training-tessa\
-├── app.py                  # Flask bot application
+├── app.py                  # Flask bot application with built-in Q&A
 ├── ingest_local_files.py   # Python script to ingest training docs
 ├── requirements.txt        # Python dependencies
 ├── Procfile               # Railway start command
@@ -45,10 +46,9 @@ C:\Projects\training-tessa\
 │   └── training-tessa.zip # Ready-to-install Teams app package
 └── docs/
     ├── CLAUDE_CODE_INSTRUCTIONS.md   # This file
-    ├── CREDENTIALS_REFERENCE.md      # API keys and endpoints
+    ├── CREDENTIALS_REFERENCE.md      # API keys and endpoints (gitignored)
     ├── CREDENTIALS_TEMPLATE.md       # Template for credentials
-    ├── HOW_TO_ADD_DOCUMENTS.md       # Document ingestion guide
-    └── synta-prompt-sharepoint-ingestion.md  # (archived)
+    └── HOW_TO_ADD_DOCUMENTS.md       # Document ingestion guide
 ```
 
 ---
@@ -59,19 +59,22 @@ C:\Projects\training-tessa\
 
 | Component | Status | Details |
 |-----------|--------|---------|
-| n8n | Running | `https://n8n-production-ac1d.up.railway.app` |
-| Supabase | Ready | 631 document chunks ingested |
-| Azure OpenAI | Working | gpt-4o + text-embedding-3-small |
-| Training Tessa Flask App | Deployed | `https://web-production-41f7a.up.railway.app` |
+| Flask Bot App | Deployed | `https://web-production-41f7a.up.railway.app` |
+| Supabase | Ready | Vector DB with pgvector (768 dimensions) |
+| Google Gemini | Working | gemini-2.5-pro + text-embedding-004 |
 | Azure Bot Registration | Created | App ID: 070c41c0-02fd-44a8-becd-b8c4d33fb029 |
 | Teams App | Installed | Bot available in Teams |
-| Document Ingestion | Working | Via Python script |
-| RAG Q&A | Working | Vector search + GPT-4o answers |
+| Document Ingestion | Working | Python script → direct to Supabase |
+| Image Processing | Working | Gemini 2.5 Flash describes images |
+| RAG Q&A | Working | Vector search + Gemini 2.5 Pro answers + source citations |
 
-### Documents Ingested
-- 35 training documents successfully ingested
-- 631 text chunks with embeddings in Supabase
-- 4 files skipped (image-based PDFs with no extractable text)
+### AI Models Used
+
+| Model | Purpose |
+|-------|---------|
+| gemini-2.5-pro | Answer generation (in app.py) |
+| gemini-2.5-flash | Image descriptions (in ingestion script) |
+| text-embedding-004 | Embeddings for documents and queries (768 dimensions) |
 
 ---
 
@@ -81,9 +84,7 @@ C:\Projects\training-tessa\
 |---------|-----|
 | Training Tessa Bot | `https://web-production-41f7a.up.railway.app` |
 | Bot Health Check | `https://web-production-41f7a.up.railway.app/health` |
-| Document Ingestion | `https://n8n-production-ac1d.up.railway.app/webhook/ingest-document` |
-| Question Answering | `https://n8n-production-ac1d.up.railway.app/webhook/ask-question` |
-| n8n Dashboard | `https://n8n-production-ac1d.up.railway.app` |
+| Bot Messages Endpoint | `https://web-production-41f7a.up.railway.app/api/messages` |
 
 ---
 
@@ -93,81 +94,43 @@ C:\Projects\training-tessa\
 
 Quick version:
 1. Add files to `C:\Users\JoelBentley\OneDrive - Meraki Talent\Agent Content\Training`
-2. Run `python ingest_local_files.py` from the project folder
-3. Documents will be processed and added to Supabase
+2. Set environment variables: `GEMINI_API_KEY`, `SUPABASE_KEY`
+3. Run `py ingest_local_files.py` from the project folder
+4. Answer prompts (clear existing? process images?)
+5. Documents will be chunked, embedded, and stored directly in Supabase
 
 ---
 
-## n8n Workflow Details
+## Customizing Tessa's Personality
 
-### RAG Document Ingestion Workflow
-Receives documents via webhook, chunks them, creates embeddings, stores in Supabase.
+Edit `TESSA_SYSTEM_PROMPT` in `app.py` (around line 57) to change:
+- Tone and personality
+- How she communicates
+- Response format
+- How she handles questions
 
-**Webhook:** POST to `/webhook/ingest-document`
-```json
-{
-  "text": "Document content here",
-  "source_document": "filename.docx"
-}
+The prompt is fully customizable - just edit the text and redeploy.
+
+---
+
+## Environment Variables
+
+### Railway (Production)
+
+| Variable | Purpose |
+|----------|---------|
+| `MICROSOFT_APP_ID` | Azure Bot App ID |
+| `MICROSOFT_APP_PASSWORD` | Azure Bot Client Secret |
+| `MICROSOFT_APP_TENANT_ID` | Azure Bot Tenant ID |
+| `GEMINI_API_KEY` | Google Gemini API key |
+| `SUPABASE_KEY` | Supabase anon key |
+
+### Local (for ingestion script)
+
+```cmd
+set GEMINI_API_KEY=your-key
+set SUPABASE_KEY=your-key
 ```
-
-### RAG Question Answering Workflow
-Receives questions, searches similar documents, generates AI answer.
-
-**Webhook:** POST to `/webhook/ask-question`
-```json
-{
-  "question": "User's question here"
-}
-```
-
-**Response:**
-```json
-{
-  "question": "...",
-  "answer": "AI-generated answer",
-  "sources": ["document1.docx", "document2.pdf"],
-  "chunk_count": 5
-}
-```
-
-### Key n8n Node Configurations
-
-#### Vector Similarity Search Node
-```javascript
-const item = $input.first();
-const questionEmbedding = item.json.question_embedding;
-const SUPABASE_URL = 'https://uwxsflcpaigcygfhxzzl.supabase.co';
-const SUPABASE_KEY = 'YOUR_SUPABASE_ANON_KEY';
-
-const embeddingStr = '[' + questionEmbedding.join(',') + ']';
-
-const response = await this.helpers.httpRequest({
-  method: 'POST',
-  url: SUPABASE_URL + '/rest/v1/rpc/match_documents',
-  headers: {
-    'apikey': SUPABASE_KEY,
-    'Authorization': 'Bearer ' + SUPABASE_KEY,
-    'Content-Type': 'application/json'
-  },
-  body: {
-    query_embedding: embeddingStr,
-    match_threshold: 0.1,
-    match_count: 5
-  }
-});
-
-return [{
-  json: {
-    question: item.json.question,
-    retrieved_chunks: response,
-    chunk_count: response.length,
-    timestamp: item.json.timestamp
-  }
-}];
-```
-
-**Important:** The embedding must be passed as a string `'[0.1,0.2,...]'` not an array.
 
 ---
 
@@ -178,7 +141,7 @@ return [{
 CREATE TABLE documents (
   id BIGSERIAL PRIMARY KEY,
   content TEXT,
-  embedding VECTOR(1536),
+  embedding VECTOR(768),
   source_document TEXT,
   metadata JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -188,7 +151,7 @@ CREATE TABLE documents (
 ### match_documents Function
 ```sql
 CREATE OR REPLACE FUNCTION match_documents(
-  query_embedding vector(1536),
+  query_embedding vector(768),
   match_threshold float DEFAULT 0.7,
   match_count int DEFAULT 5
 )
@@ -224,35 +187,39 @@ $$;
 2. Verify health: `curl https://web-production-41f7a.up.railway.app/health`
 3. Check Azure Bot messaging endpoint is `https://web-production-41f7a.up.railway.app/api/messages`
 
-### Q&A returns "I don't have that information"
-1. Check if `chunk_count > 0` in webhook response
-2. If 0, vector search isn't finding matches - lower `match_threshold`
-3. If > 0, adjust the system prompt in Build RAG Prompt node
+### Q&A returns no answer or errors
+1. Check Railway logs for error messages
+2. Verify GEMINI_API_KEY is set correctly in Railway
+3. Verify SUPABASE_KEY is set correctly in Railway
 
 ### Vector search returns 0 chunks
-1. Verify documents are in Supabase
-2. Check embedding format is string `'[...]'` not array
-3. Lower match_threshold to 0.1 or lower
+1. Verify documents are in Supabase with 768-dimension embeddings
+2. Lower match_threshold if needed (currently 0.1)
+3. Re-run ingestion if embeddings were created with wrong model
 
 ### Document ingestion fails
-1. Check n8n execution logs
-2. Verify Azure OpenAI API key is valid
-3. Check Supabase connection
+1. Check GEMINI_API_KEY is set in terminal
+2. Check SUPABASE_KEY is set in terminal
+3. Verify internet connection
 
 ---
 
-## Key Fixes Applied
+## Changing Endpoints
 
-1. **BotFrameworkAdapterSettings** - Removed invalid `app_tenantid` parameter
-2. **Vector search embedding format** - Must be string `'[...]'` for Supabase RPC
-3. **match_threshold** - Lowered to 0.1 for better matching
-4. **System prompt** - Made less strict to give helpful answers
+### If Railway URL changes:
+1. Get new URL from Railway dashboard
+2. Update Azure Bot: Azure Portal → Bot Services → your bot → Configuration → Messaging endpoint
+3. Set to: `https://NEW-URL/api/messages`
+
+### To use custom domain:
+1. Railway → Settings → Networking → Custom Domain
+2. Add DNS CNAME record
+3. Update Azure Bot messaging endpoint
 
 ---
 
 ## Files NOT in Git (gitignored)
 
-- `docs/CREDENTIALS_REFERENCE.md` - Contains API keys
-- `docs/synta-prompt-sharepoint-ingestion.md` - Archived
+- `docs/CREDENTIALS_REFERENCE.md` - Contains actual API keys
 - `.env` - Environment variables
 - `__pycache__/` - Python cache

@@ -7,23 +7,47 @@ A Microsoft Teams bot that answers staff questions using RAG-powered training do
 | Component | Status |
 |-----------|--------|
 | Flask Bot App | Running on Railway |
-| n8n Workflows | Active |
-| Supabase Vector DB | 631 document chunks |
-| Azure OpenAI | gpt-4o + embeddings |
+| Supabase Vector DB | Document chunks with 768-dim embeddings |
+| Google Gemini | gemini-2.5-pro (answers) + text-embedding-004 (embeddings) |
 | Teams Integration | Installed |
+| Image Processing | Gemini 2.5 Flash Vision |
+
+## Features
+
+- **RAG-powered answers** - Searches training documents and generates AI answers
+- **Source citations** - Shows which documents the answer came from
+- **Image understanding** - Extracts and describes images from Word/PowerPoint docs
+- **Smart chunking** - Splits documents with overlap for better context
+- **Customizable personality** - Edit TESSA_SYSTEM_PROMPT in app.py
 
 ## Architecture
 
 ```
 Staff Question (Teams)
-    |
+    ↓
 Training Tessa (Flask on Railway)
-    |
-n8n Q&A Webhook
-    |
-Supabase Vector Search + Azure OpenAI
-    |
-Answer back to Teams
+    ↓
+Gemini text-embedding-004 creates question embedding
+    ↓
+Supabase Vector Search (768 dimensions)
+    ↓
+Gemini 2.5 Pro generates answer with context
+    ↓
+Answer with sources back to Teams
+```
+
+```
+Document Ingestion (Local Python Script)
+    ↓
+Extract text + images from files
+    ↓
+Gemini 2.5 Flash describes images
+    ↓
+Chunk text (1000 chars, 200 overlap)
+    ↓
+Gemini text-embedding-004 creates embeddings
+    ↓
+Store in Supabase with source_document
 ```
 
 ## Quick Links
@@ -31,22 +55,23 @@ Answer back to Teams
 | Service | URL |
 |---------|-----|
 | Bot Health | https://web-production-41f7a.up.railway.app/health |
-| n8n Dashboard | https://n8n-production-ac1d.up.railway.app |
 | GitHub Repo | https://github.com/JimDogBass/training-tessa |
 
 ## Adding New Training Documents
 
-See [docs/HOW_TO_ADD_DOCUMENTS.md](docs/HOW_TO_ADD_DOCUMENTS.md) for instructions.
+See [docs/HOW_TO_ADD_DOCUMENTS.md](docs/HOW_TO_ADD_DOCUMENTS.md) for full instructions.
 
 **Quick version:**
 1. Add files to `C:\Users\JoelBentley\OneDrive - Meraki Talent\Agent Content\Training`
-2. Run `python ingest_local_files.py`
+2. Set environment variables (GEMINI_API_KEY, SUPABASE_KEY)
+3. Run `python ingest_local_files.py`
+4. Answer `y` to clear existing docs (optional) and process images
 
 ## Project Structure
 
 ```
 training-tessa/
-├── app.py                  # Flask bot application
+├── app.py                  # Flask bot application (includes Q&A logic)
 ├── ingest_local_files.py   # Script to ingest training documents
 ├── requirements.txt        # Python dependencies
 ├── Procfile               # Railway start command
@@ -59,39 +84,39 @@ training-tessa/
 │   └── training-tessa.zip # Ready-to-install Teams app
 └── docs/
     ├── CLAUDE_CODE_INSTRUCTIONS.md   # Project documentation
-    ├── CREDENTIALS_REFERENCE.md      # API keys and endpoints
+    ├── CREDENTIALS_REFERENCE.md      # API keys and endpoints (gitignored)
     ├── CREDENTIALS_TEMPLATE.md       # Template for credentials
     └── HOW_TO_ADD_DOCUMENTS.md       # Document ingestion guide
 ```
 
-## Environment Variables
+## Environment Variables (Railway)
 
 | Variable | Description |
 |----------|-------------|
 | `MICROSOFT_APP_ID` | Azure Bot App ID |
 | `MICROSOFT_APP_PASSWORD` | Azure Bot Client Secret |
-| `PORT` | Server port (default: 3978) |
-
-## n8n Workflows
-
-### RAG Document Ingestion
-- **Webhook**: POST to `/webhook/ingest-document`
-- **Body**: `{"text": "content", "source_document": "filename"}`
-- **Process**: Chunks text, creates embeddings, stores in Supabase
-
-### RAG Question Answering
-- **Webhook**: POST to `/webhook/ask-question`
-- **Body**: `{"question": "user's question"}`
-- **Process**: Creates embedding, vector search, GPT-4o generates answer
+| `MICROSOFT_APP_TENANT_ID` | Azure Bot Tenant ID |
+| `GEMINI_API_KEY` | Google Gemini API key |
+| `SUPABASE_KEY` | Supabase anon key |
 
 ## Local Development
 
 ```bash
 pip install -r requirements.txt
+set GEMINI_API_KEY=your-key
+set SUPABASE_KEY=your-key
 python app.py
 ```
 
 Use Bot Framework Emulator to test locally.
+
+## Customizing Tessa's Personality
+
+Edit the `TESSA_SYSTEM_PROMPT` variable in `app.py` (around line 57) to change how Tessa communicates:
+- Tone and personality
+- Response format
+- How she handles questions
+- Communication style
 
 ## Troubleshooting
 
@@ -101,13 +126,13 @@ Use Bot Framework Emulator to test locally.
 3. Check Azure Bot messaging endpoint is correct
 
 ### Wrong or no answers
-1. Check n8n Q&A workflow execution logs
-2. Verify documents are in Supabase
-3. Test webhook directly with curl
+1. Check Railway deployment logs
+2. Verify documents are in Supabase (should have 768-dim embeddings)
+3. Test health endpoint
 
 ### Adding new documents
-1. Run the ingestion script
-2. Check n8n logs for any errors
+1. Set environment variables
+2. Run the ingestion script
 3. Verify documents appear in Supabase
 
 ## Documentation

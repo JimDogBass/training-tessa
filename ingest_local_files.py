@@ -21,7 +21,7 @@ TRAINING_FOLDER = r"C:\Users\JoelBentley\OneDrive - Meraki Talent\Agent Content\
 # Gemini API (for embeddings and image descriptions)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GEMINI_EMBEDDING_MODEL = "text-embedding-004"
-GEMINI_VISION_MODEL = "gemini-2.5-pro-preview-05-06"
+GEMINI_VISION_MODEL = "gemini-2.5-flash"
 
 if not GEMINI_API_KEY:
     print("ERROR: GEMINI_API_KEY environment variable not set.")
@@ -181,17 +181,11 @@ def extract_content(file_path):
 def describe_image_with_vision(image_data, filename):
     """Use Gemini Vision to describe an image."""
     try:
-        # Determine image type
-        if image_data[:4] == b'\x89PNG':
-            mime_type = "image/png"
-        else:
-            mime_type = "image/jpeg"
+        from PIL import Image
+        from io import BytesIO
 
-        # Create image part for Gemini
-        image_part = {
-            "mime_type": mime_type,
-            "data": image_data
-        }
+        # Convert bytes to PIL Image
+        image = Image.open(BytesIO(image_data))
 
         model = genai.GenerativeModel(model_name=GEMINI_VISION_MODEL)
 
@@ -201,7 +195,7 @@ Include any visible text, diagrams, charts, or key information.
 Focus on information that would be useful for training purposes.
 Keep the description concise but complete."""
 
-        response = model.generate_content([prompt, image_part])
+        response = model.generate_content([prompt, image])
         description = response.text
         return f"[Image Description]: {description}"
     except Exception as e:
@@ -323,10 +317,10 @@ def process_file(file_path, filename, process_images=True):
 
     print(f"  Extracted {len(text)} characters, {len(images)} images")
 
-    # Process images with GPT-4 Vision
+    # Process images with Gemini Vision
     image_descriptions = []
     if process_images and images:
-        print(f"  Processing {len(images)} images with GPT-4 Vision...")
+        print(f"  Processing {len(images)} images with Gemini Vision...")
         for i, img_data in enumerate(images[:5]):  # Limit to 5 images per doc
             desc = describe_image_with_vision(img_data, filename)
             if desc:
@@ -387,7 +381,7 @@ def main():
 
     # Ask about processing images
     print("\n" + "-" * 60)
-    response = input("Process images with GPT-4 Vision? (y/n): ").strip().lower()
+    response = input("Process images with Gemini Vision? (y/n): ").strip().lower()
     process_images = response == 'y'
     print("-" * 60 + "\n")
 
