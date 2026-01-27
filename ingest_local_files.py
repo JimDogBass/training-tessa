@@ -13,7 +13,7 @@ import base64
 import httpx
 from pathlib import Path
 from io import BytesIO
-import google.generativeai as genai
+from google import genai
 
 # Configuration
 TRAINING_FOLDER = r"C:\Users\JoelBentley\OneDrive - Meraki Talent\Agent Content\Training"
@@ -23,13 +23,17 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GEMINI_EMBEDDING_MODEL = "text-embedding-004"
 GEMINI_VISION_MODEL = "gemini-2.5-flash"
 
+# Retry settings
+MAX_RETRIES = 3
+RETRY_DELAY = 5  # seconds
+
 if not GEMINI_API_KEY:
     print("ERROR: GEMINI_API_KEY environment variable not set.")
     print("Set it with: set GEMINI_API_KEY=your-api-key")
     sys.exit(1)
 
-# Configure Gemini
-genai.configure(api_key=GEMINI_API_KEY)
+# Configure Gemini client
+gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 # Supabase
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://uwxsflcpaigcygfhxzzl.supabase.co")
@@ -187,15 +191,16 @@ def describe_image_with_vision(image_data, filename):
         # Convert bytes to PIL Image
         image = Image.open(BytesIO(image_data))
 
-        model = genai.GenerativeModel(model_name=GEMINI_VISION_MODEL)
-
         prompt = f"""You are a helpful assistant that describes images from training documents.
 Please describe this image from the training document '{filename}'.
 Include any visible text, diagrams, charts, or key information.
 Focus on information that would be useful for training purposes.
 Keep the description concise but complete."""
 
-        response = model.generate_content([prompt, image])
+        response = gemini_client.models.generate_content(
+            model=GEMINI_VISION_MODEL,
+            contents=[prompt, image]
+        )
         description = response.text
         return f"[Image Description]: {description}"
     except Exception as e:
@@ -240,17 +245,22 @@ def chunk_text(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
 
 
 def create_embedding(text):
-    """Create embedding using Gemini."""
-    try:
-        result = genai.embed_content(
-            model=f"models/{GEMINI_EMBEDDING_MODEL}",
-            content=text,
-            task_type="retrieval_document"  # Use retrieval_document for ingestion
-        )
-        return result['embedding']
-    except Exception as e:
-        print(f"    Error creating embedding: {e}")
-        return None
+    """Create embedding using Gemini with retry logic."""
+    for attempt in range(MAX_RETRIES):
+        try:
+            result = gemini_client.models.embed_content(
+                model=GEMINI_EMBEDDING_MODEL,
+                contents=text,
+                config={"task_type": "RETRIEVAL_DOCUMENT"}
+            )
+            return result.embeddings[0].values
+        except Exception as e:
+            if attempt < MAX_RETRIES - 1:
+                print(f"    Embedding attempt {attempt + 1} failed, retrying in {RETRY_DELAY}s...")
+                time.sleep(RETRY_DELAY)
+            else:
+                print(f"    Error creating embedding after {MAX_RETRIES} attempts: {e}")
+                return None
 
 
 def insert_to_supabase(content, embedding, source_document):

@@ -10,7 +10,7 @@ import httpx
 from flask import Flask, request, jsonify
 from botbuilder.core import BotFrameworkAdapter, BotFrameworkAdapterSettings, TurnContext
 from botbuilder.schema import Activity, ActivityTypes
-import google.generativeai as genai
+from google import genai
 
 app = Flask(__name__)
 
@@ -79,19 +79,27 @@ TESSA_SYSTEM_PROMPT = """You are Training Tessa, the friendly and knowledgeable 
 
 Remember: You're here to help Meraki Talent staff learn and succeed!"""
 
-# Configure Gemini
-genai.configure(api_key=GEMINI_API_KEY)
+# Initialize Gemini client (lazy initialization to allow health checks before env vars are set)
+_gemini_client = None
+
+def get_gemini_client():
+    """Get or create Gemini client."""
+    global _gemini_client
+    if _gemini_client is None and GEMINI_API_KEY:
+        _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    return _gemini_client
 
 
 def create_embedding(text):
     """Create embedding using Gemini."""
     try:
-        result = genai.embed_content(
-            model=f"models/{GEMINI_EMBEDDING_MODEL}",
-            content=text,
-            task_type="retrieval_query"
+        client = get_gemini_client()
+        result = client.models.embed_content(
+            model=GEMINI_EMBEDDING_MODEL,
+            contents=text,
+            config={"task_type": "RETRIEVAL_QUERY"}
         )
-        return result['embedding']
+        return result.embeddings[0].values
     except Exception as e:
         print(f"Error creating embedding: {e}")
         return None
@@ -157,12 +165,12 @@ Please provide a helpful answer based on the documents above."""
 Please let them know you couldn't find specific information about this in the training materials, and offer to help if they rephrase or ask something else."""
 
         # Call Gemini
-        model = genai.GenerativeModel(
-            model_name=GEMINI_MODEL,
-            system_instruction=TESSA_SYSTEM_PROMPT
+        client = get_gemini_client()
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=user_prompt,
+            config={"system_instruction": TESSA_SYSTEM_PROMPT}
         )
-
-        response = model.generate_content(user_prompt)
         return response.text
 
     except Exception as e:
