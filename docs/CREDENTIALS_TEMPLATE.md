@@ -7,6 +7,7 @@ This file lists the credentials and environment variables needed for the project
 
 - **API Key**: `[GEMINI_API_KEY]`
 - **Get one at**: https://aistudio.google.com/apikey
+- **Package**: `google-genai` (install with `pip install google-genai`)
 
 ### Models Used
 

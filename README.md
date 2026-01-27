@@ -7,7 +7,7 @@ A Microsoft Teams bot that answers staff questions using RAG-powered training do
 | Component | Status |
 |-----------|--------|
 | Flask Bot App | Running on Railway |
-| Supabase Vector DB | Document chunks with 768-dim embeddings |
+| Supabase Vector DB | ~1,400+ chunks with 768-dim embeddings |
 | Google Gemini | gemini-2.5-pro (answers) + text-embedding-004 (embeddings) |
 | Teams Integration | Installed |
 | Image Processing | Gemini 2.5 Flash Vision |
@@ -19,6 +19,7 @@ A Microsoft Teams bot that answers staff questions using RAG-powered training do
 - **Image understanding** - Extracts and describes images from Word/PowerPoint docs
 - **Smart chunking** - Splits documents with overlap for better context
 - **Customizable personality** - Edit TESSA_SYSTEM_PROMPT in app.py
+- **Retry logic** - Automatic retries for network failures during ingestion
 
 ## Architecture
 
@@ -64,7 +65,7 @@ See [docs/HOW_TO_ADD_DOCUMENTS.md](docs/HOW_TO_ADD_DOCUMENTS.md) for full instru
 **Quick version:**
 1. Add files to `C:\Users\JoelBentley\OneDrive - Meraki Talent\Agent Content\Training`
 2. Set environment variables (GEMINI_API_KEY, SUPABASE_KEY)
-3. Run `python ingest_local_files.py`
+3. Run `py ingest_local_files.py`
 4. Answer `y` to clear existing docs (optional) and process images
 
 ## Project Structure
@@ -112,7 +113,7 @@ Use Bot Framework Emulator to test locally.
 
 ## Customizing Tessa's Personality
 
-Edit the `TESSA_SYSTEM_PROMPT` variable in `app.py` (around line 57) to change how Tessa communicates:
+Edit the `TESSA_SYSTEM_PROMPT` variable in `app.py` (around line 52) to change how Tessa communicates:
 - Tone and personality
 - Response format
 - How she handles questions
@@ -142,3 +143,10 @@ Edit the `TESSA_SYSTEM_PROMPT` variable in `app.py` (around line 57) to change h
 | `docs/CLAUDE_CODE_INSTRUCTIONS.md` | Full project documentation |
 | `docs/CREDENTIALS_REFERENCE.md` | All API keys and endpoints |
 | `docs/HOW_TO_ADD_DOCUMENTS.md` | How to add new training docs |
+
+## Recent Changes
+
+**27 January 2026:**
+- Migrated from deprecated `google-generativeai` to `google-genai` package
+- Added retry logic for network failures during ingestion
+- Ingested 35 training documents (~1,400+ chunks)

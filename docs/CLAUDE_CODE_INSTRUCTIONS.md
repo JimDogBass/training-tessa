@@ -1,6 +1,6 @@
 # Training Tessa - Claude Code Instructions
 
-**Last Updated:** 26 January 2026
+**Last Updated:** 27 January 2026
 
 ## Project Overview
 
@@ -21,7 +21,7 @@ RAG-powered training bot for Meraki Talent staff. Users ask questions in Teams, 
 │  describes images → Chunk (1000 chars/200 overlap) → Gemini    │
 │  text-embedding-004 → Direct insert to Supabase (768-dim)      │
 │                                                                 │
-│  Q&A FLOW (Built into Flask app - no n8n)                      │
+│  Q&A FLOW (Built into Flask app)                               │
 │  Teams → Training Tessa (Flask) → Gemini embedding →           │
 │  Supabase Vector Search → Gemini 2.5 Pro → Answer with sources │
 │                                                                 │
@@ -61,10 +61,10 @@ C:\Projects\training-tessa\
 |-----------|--------|---------|
 | Flask Bot App | Deployed | `https://web-production-41f7a.up.railway.app` |
 | Supabase | Ready | Vector DB with pgvector (768 dimensions) |
-| Google Gemini | Working | gemini-2.5-pro + text-embedding-004 |
+| Google Gemini | Working | `google-genai` package (migrated from deprecated `google-generativeai`) |
 | Azure Bot Registration | Created | App ID: 070c41c0-02fd-44a8-becd-b8c4d33fb029 |
 | Teams App | Installed | Bot available in Teams |
-| Document Ingestion | Working | Python script → direct to Supabase |
+| Document Ingestion | Working | Python script → direct to Supabase with retry logic |
 | Image Processing | Working | Gemini 2.5 Flash describes images |
 | RAG Q&A | Working | Vector search + Gemini 2.5 Pro answers + source citations |
 
@@ -75,6 +75,16 @@ C:\Projects\training-tessa\
 | gemini-2.5-pro | Answer generation (in app.py) |
 | gemini-2.5-flash | Image descriptions (in ingestion script) |
 | text-embedding-004 | Embeddings for documents and queries (768 dimensions) |
+
+### Documents Ingested
+
+- **35 of 39 files** processed successfully
+- **~1,400+ chunks** stored in Supabase
+- **4 files skipped** (image-based PDFs that need OCR):
+  - Exec Search Presentation.pdf
+  - Retainer Training Final.odp
+  - Strategic Leadership Course - Day 1.pdf
+  - Strategic Leadership Course - Day 2.pdf
 
 ---
 
@@ -103,7 +113,7 @@ Quick version:
 
 ## Customizing Tessa's Personality
 
-Edit `TESSA_SYSTEM_PROMPT` in `app.py` (around line 57) to change:
+Edit `TESSA_SYSTEM_PROMPT` in `app.py` (around line 52) to change:
 - Tone and personality
 - How she communicates
 - Response format
@@ -201,6 +211,7 @@ $$;
 1. Check GEMINI_API_KEY is set in terminal
 2. Check SUPABASE_KEY is set in terminal
 3. Verify internet connection
+4. Script has retry logic (3 attempts with 5s delay) for network errors
 
 ---
 
@@ -215,6 +226,16 @@ $$;
 1. Railway → Settings → Networking → Custom Domain
 2. Add DNS CNAME record
 3. Update Azure Bot messaging endpoint
+
+---
+
+## Recent Changes
+
+### 27 January 2026
+- Migrated from deprecated `google-generativeai` to `google-genai` package
+- Added retry logic (3 attempts, 5s delay) for embedding failures
+- Ingested 35 training documents (~1,400+ chunks)
+- Deleted n8n workflows (all logic now in Flask app)
 
 ---
 

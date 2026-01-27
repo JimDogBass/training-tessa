@@ -26,7 +26,7 @@ C:\Users\JoelBentley\OneDrive - Meraki Talent\Agent Content\Training
 - `.pdf` - PDF documents (text-based, not scanned images)
 - `.doc` - Legacy Word documents
 - `.ppt` - Legacy PowerPoint
-- `.odt` - OpenDocument text
+- `.odt` / `.odp` - OpenDocument files
 - `.txt` - Plain text files
 
 ### Step 2: Set Environment Variables
@@ -73,6 +73,8 @@ You'll see output like:
   [OK] Stored 8/8 chunks
 ```
 
+**Note:** The script has retry logic (3 attempts with 5s delay) for network errors.
+
 ### Step 6: Verify
 
 Ask Training Tessa a question about the new content. The answer should now include **source citations** showing which documents the information came from.
@@ -116,13 +118,14 @@ Ask Training Tessa a question about the new content. The answer should now inclu
 - Environment variables don't persist between terminal sessions
 
 ### "No text extracted" message
-- The file might be an image-based PDF
+- The file might be an image-based/scanned PDF
 - The file might be corrupted
 - Try opening the file to verify it has text content
 
-### Script fails with connection error
+### Script fails with connection/timeout error
 - Check your internet connection
-- Gemini API and Supabase must be reachable
+- The script will automatically retry up to 3 times
+- If it keeps failing, wait a few minutes and try again
 
 ### Documents not appearing in Tessa's answers
 - Wait a few seconds after ingestion
@@ -138,6 +141,22 @@ Ask Training Tessa a question about the new content. The answer should now inclu
 2. Select your project
 3. Click "Table Editor" → "documents"
 4. Sort by `created_at` descending
+
+---
+
+## Current Ingestion Status
+
+As of 27 January 2026:
+- **35 of 39 files** processed successfully
+- **~1,400+ chunks** stored in Supabase
+
+### Skipped Files (need OCR)
+
+These files were skipped because they are image-based/scanned:
+- Exec Search Presentation.pdf
+- Retainer Training Final.odp
+- Strategic Leadership Course - Day 1.pdf
+- Strategic Leadership Course - Day 2.pdf
 
 ---
 
