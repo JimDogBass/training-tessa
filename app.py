@@ -1,311 +1,206 @@
 """
-Training Tessa - Meraki Talent Training Bot
-A Teams bot that answers staff questions using RAG-powered training documents.
-Now with built-in Q&A using Gemini 2.5 Pro (no n8n dependency).
+Info Pack Bot - Meraki Talent
+Web form: paste recruiter notes, get a candidate-facing info pack with recent news.
+(Page title still reads "Interview Prep Bot" per Joel.)
 """
 
 import os
-import asyncio
+import re
 import httpx
-from flask import Flask, request, jsonify
-from botbuilder.core import BotFrameworkAdapter, BotFrameworkAdapterSettings, TurnContext
-from botbuilder.schema import Activity, ActivityTypes
+from concurrent.futures import ThreadPoolExecutor
+from flask import Flask, request, render_template_string
 from google import genai
+from google.genai import types
 
 app = Flask(__name__)
 
-# Bot Framework settings - initialized lazily to allow health checks before env vars are set
-ADAPTER = None
-
-def get_adapter():
-    """Get or create Bot Framework adapter."""
-    global ADAPTER
-    if ADAPTER is None:
-        settings = BotFrameworkAdapterSettings(
-            app_id=os.environ.get("MICROSOFT_APP_ID"),
-            app_password=os.environ.get("MICROSOFT_APP_PASSWORD"),
-            channel_auth_tenant=os.environ.get("MICROSOFT_APP_TENANT_ID")
-        )
-        ADAPTER = BotFrameworkAdapter(settings)
-    return ADAPTER
-
-# =============================================================================
-# Q&A CONFIGURATION - All secrets loaded from environment variables
-# =============================================================================
-
-# Gemini API (used for both embeddings and answer generation)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GEMINI_MODEL = "gemini-2.5-pro"
-GEMINI_EMBEDDING_MODEL = "text-embedding-004"
 
-# Supabase
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://uwxsflcpaigcygfhxzzl.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-
-# Request timeout (seconds)
-REQUEST_TIMEOUT = 60
-
-# =============================================================================
-# TESSA'S PERSONALITY - Customize her communication style here!
-# =============================================================================
-
-TESSA_SYSTEM_PROMPT = """You are Training Tessa, the friendly and knowledgeable training assistant for Meraki Talent staff.
-
-## Your Personality
-- Warm, approachable, and encouraging
-- Professional but not stiff - like a helpful colleague
-- Patient when explaining complex topics
-- Honest when you don't know something
-
-## How You Communicate
-- Use clear, simple language - avoid jargon unless it's in the source material
-- Break down complex answers into easy-to-follow steps
-- Use bullet points for lists and processes
-- Keep answers concise but complete
-- Add a brief encouraging note when appropriate
-
-## How You Handle Questions
-- Base your answers on the training documents provided in the context
-- If the context contains relevant information, use it to give a helpful answer
-- If you're not sure or the context doesn't cover the question, say so honestly
-- Always mention which document(s) your answer comes from when relevant
-- If someone asks something outside your training scope, kindly redirect them
-
-## Response Format
-- Start with a direct answer to the question
-- Provide supporting details or steps if needed
-- Keep responses focused - don't over-explain
-- End with an offer to help further if the topic is complex
-
-Remember: You're here to help Meraki Talent staff learn and succeed!"""
-
-# Initialize Gemini client (lazy initialization to allow health checks before env vars are set)
 _gemini_client = None
 
+
 def get_gemini_client():
-    """Get or create Gemini client."""
     global _gemini_client
     if _gemini_client is None and GEMINI_API_KEY:
         _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
     return _gemini_client
 
 
-def create_embedding(text):
-    """Create embedding using Gemini."""
+SYSTEM_PROMPT = """You generate a candidate-facing info pack for a recruitment opportunity at Meraki Talent. The pack pitches the role to a prospective candidate. It is not internal, it is not interview prep, and it is not a covering email.
+
+You are given:
+- notes: the recruiter's raw notes about the firm and the role (firm description, fund history, role, team, comp and internal commentary all mixed together).
+- Google Search access: use it to find recent news about the firm for the Recent news section only.
+
+OUTPUT FORMAT
+Plain text, ready to paste into Outlook. No markdown, no bold, no headings prefixed with #, no bullet symbols other than the hyphen lists shown below. Produce exactly this section structure and order. Drop any section whole when there is nothing real to fill it. Do NOT include a Compensation section under any circumstances. Do NOT add a closing line or signoff; the recruiter writes their own.
+
+Structure:
+
+{Firm}
+{Role title}
+Prepared by Meraki Talent
+
+About {firm}
+{two to four plain lines: what they do, focus, footprint}
+
+Track record
+- {fund or milestone, with year and amount}
+- {fund or milestone, with year and amount}
+{optional headline stat line}
+
+Your contact at the firm
+{name}, {title}
+{one or two lines on background}
+
+The opportunity
+{what the role is and what they actually want}
+
+What they're looking for
+- {background sought}
+- {location}
+- {any flexibility, e.g. player/coach}
+
+Recent news
+- {one short summary line}
+  {url}
+- {one short summary line}
+  {url}
+
+WHAT TO INCLUDE, WHAT TO STRIP
+Everything candidate-facing goes in: firm, track record, contact, role, background sought, location. Strip all internal colour, no exceptions:
+- pipeline state ("open since February", "not getting traction")
+- urgency to the recruiter ("ready to move on this")
+- candid team assessments ("not producing", "likely to move into marketing")
+Neutralise team detail to a plain structure ("a capital raising team of three") or drop it. If you cannot tell whether a line is sell-side or internal, leave it out. Never include compensation figures, even when present in the notes.
+
+WHERE FACTS COME FROM
+Everything above Recent news comes from the notes. Google Search only feeds the Recent news block. If a news item contradicts the notes, the notes win for the pack body. Never invent figures, names, fund sizes or URLs.
+
+NEWS BLOCK RULES
+- Find two to four recent, relevant items about the firm via Google Search.
+- Use the real publication URL (e.g. https://commercialobserver.com/...). Never use a Google redirect URL or any vertexaisearch.cloud.google.com link. If the only URL you have is a redirect, drop that item.
+- Each item: one short summary line, then the URL on its own line directly underneath, indented by two spaces.
+- If you cannot find genuine news with real URLs, drop the Recent news section entirely rather than inventing.
+
+STYLE
+- British English.
+- No em dashes anywhere. Use a comma or full stop instead.
+- No AI filler. Never use these phrases or words: "I hope this finds you well", "I wanted to reach out", "delve", "leverage", "furthermore", "moreover", "it's worth noting", "in today's landscape".
+- Short, plain sentences, the way an experienced recruiter writes.
+- No praise or marketing fluff in the firm description. State facts.
+- Links on their own line under each news item. Never inline.
+
+Output the plain-text info pack with no preamble, no closing remark, no markdown code fences."""
+
+
+PAGE = """<!doctype html>
+<html><head><title>Interview Prep Bot</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+  h1 { margin-bottom: 0.25rem; }
+  .sub { color: #666; margin-top: 0; }
+  label { display: block; margin-top: 1rem; font-weight: 600; }
+  textarea { width: 100%; padding: 0.55rem; font-size: 1rem; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-family: inherit; min-height: 320px; }
+  button { margin-top: 1rem; padding: 0.65rem 1.4rem; font-size: 1rem; cursor: pointer; background: #2563eb; color: white; border: none; border-radius: 4px; }
+  button:hover { background: #1d4ed8; }
+  .pack { background: #f5f5f5; padding: 1rem 1.2rem; border-radius: 6px; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin-top: 0.5rem; font-size: 0.92rem; line-height: 1.5; }
+  .error { color: #b00020; background: #ffe8ec; padding: 0.75rem 1rem; border-radius: 4px; }
+  .copy-btn { background: #555; font-size: 0.85rem; padding: 0.4rem 0.8rem; color: white; }
+</style></head>
+<body>
+<h1>Interview Prep Bot</h1>
+<p class="sub">Paste your recruiter notes about the firm and the role. The bot drafts a candidate-facing info pack and finds recent news about the firm.</p>
+<form method="post">
+  <label>Notes</label>
+  <textarea name="notes" required placeholder="Firm description, fund history, role, team, comp, internal colour - paste it all. The bot will strip the internal stuff and structure the rest. Compensation is never included.">{{ notes or '' }}</textarea>
+  <button type="submit">Generate info pack</button>
+</form>
+{% if pack %}
+  <h2>Info pack</h2>
+  <button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('pack-text').innerText)">Copy to clipboard</button>
+  <div class="pack" id="pack-text">{{ pack }}</div>
+{% endif %}
+{% if error %}
+  <p class="error">{{ error }}</p>
+{% endif %}
+</body></html>"""
+
+
+def strip_code_fence(text):
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines)
+    return text.strip()
+
+
+# Gemini grounding hands back Google redirect URLs; resolve them to the real
+# publication URLs the info-pack spec requires.
+REDIRECT_PATTERN = re.compile(
+    r"https?://vertexaisearch\.cloud\.google\.com/grounding-api-redirect/[^\s)]+"
+)
+
+
+def _resolve_one(redirect_url):
     try:
-        client = get_gemini_client()
-        result = client.models.embed_content(
-            model=GEMINI_EMBEDDING_MODEL,
-            contents=text,
-            config={"task_type": "RETRIEVAL_QUERY"}
-        )
-        return result.embeddings[0].values
-    except Exception as e:
-        print(f"Error creating embedding: {e}")
-        return None
+        with httpx.Client(follow_redirects=True, timeout=8.0) as client:
+            resp = client.head(redirect_url)
+            final = str(resp.url)
+            if final == redirect_url or "vertexaisearch.cloud.google.com" in final:
+                resp = client.get(redirect_url)
+                final = str(resp.url)
+            return redirect_url, final
+    except Exception:
+        return redirect_url, redirect_url
 
 
-def search_documents(query_embedding, match_count=5, match_threshold=0.1):
-    """Search Supabase for similar documents."""
-    try:
-        url = f"{SUPABASE_URL}/rest/v1/rpc/match_documents"
-
-        # Embedding must be passed as a string for Supabase RPC
-        embedding_str = '[' + ','.join(str(x) for x in query_embedding) + ']'
-
-        with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
-            response = client.post(
-                url,
-                headers={
-                    "apikey": SUPABASE_KEY,
-                    "Authorization": f"Bearer {SUPABASE_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "query_embedding": embedding_str,
-                    "match_threshold": match_threshold,
-                    "match_count": match_count
-                }
-            )
-            response.raise_for_status()
-            return response.json()
-    except Exception as e:
-        print(f"Error searching documents: {e}")
-        return []
+def resolve_redirect_urls(text):
+    urls = list(set(REDIRECT_PATTERN.findall(text)))
+    if not urls:
+        return text
+    with ThreadPoolExecutor(max_workers=min(8, len(urls))) as pool:
+        for original, final in pool.map(_resolve_one, urls):
+            if final and final != original:
+                text = text.replace(original, final)
+    return text
 
 
-def generate_answer(question, context_chunks):
-    """Generate answer using Gemini 2.5 Pro."""
-    try:
-        # Build context from retrieved chunks
-        if context_chunks:
-            context_parts = []
-            for i, chunk in enumerate(context_chunks, 1):
-                source = chunk.get('source_document', 'Unknown')
-                content = chunk.get('content', '')
-                context_parts.append(f"[Document {i}: {source}]\n{content}")
-
-            context = "\n\n---\n\n".join(context_parts)
-
-            user_prompt = f"""Based on the following training documents, please answer the question.
-
-## Training Documents:
-{context}
-
-## Question:
-{question}
-
-Please provide a helpful answer based on the documents above."""
-        else:
-            user_prompt = f"""The user has asked a question, but no relevant training documents were found.
-
-## Question:
-{question}
-
-Please let them know you couldn't find specific information about this in the training materials, and offer to help if they rephrase or ask something else."""
-
-        # Call Gemini
-        client = get_gemini_client()
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=user_prompt,
-            config={"system_instruction": TESSA_SYSTEM_PROMPT}
-        )
-        return response.text
-
-    except Exception as e:
-        print(f"Error generating answer: {e}")
-        return None
+def generate_info_pack(notes):
+    client = get_gemini_client()
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=f"notes:\n{notes}",
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            tools=[types.Tool(google_search=types.GoogleSearch())],
+        ),
+    )
+    return resolve_redirect_urls(strip_code_fence(response.text))
 
 
-def ask_tessa(question):
-    """Main Q&A function - creates embedding, searches, generates answer."""
-    # Step 1: Create embedding for the question
-    embedding = create_embedding(question)
-    if not embedding:
-        return {
-            "answer": "Sorry, I had trouble processing your question. Please try again.",
-            "sources": [],
-            "chunk_count": 0
-        }
-
-    # Step 2: Search for relevant documents
-    chunks = search_documents(embedding)
-
-    # Step 3: Generate answer with Gemini
-    answer = generate_answer(question, chunks)
-    if not answer:
-        return {
-            "answer": "Sorry, I encountered an error generating a response. Please try again.",
-            "sources": [],
-            "chunk_count": len(chunks)
-        }
-
-    # Step 4: Extract unique sources
-    sources = list(set(chunk.get('source_document', 'Unknown') for chunk in chunks if chunk.get('source_document')))
-
-    return {
-        "answer": answer,
-        "sources": sources,
-        "chunk_count": len(chunks)
-    }
-
-
-async def on_turn(turn_context: TurnContext):
-    """Handle incoming messages."""
-    if turn_context.activity.type == ActivityTypes.message:
-        user_question = turn_context.activity.text
-
-        if not user_question or not user_question.strip():
-            await turn_context.send_activity("Hi! I'm Training Tessa. Ask me anything about Meraki Talent processes, policies, or training materials.")
-            return
-
-        # Show typing indicator
-        await turn_context.send_activity(Activity(type=ActivityTypes.typing))
-
+@app.route("/", methods=["GET", "POST"])
+def index():
+    if request.method == "POST":
+        notes = request.form.get("notes", "").strip()
         try:
-            # Use built-in Q&A with Gemini
-            result = ask_tessa(user_question)
-
-            # Extract answer and sources
-            answer = result.get("answer", "Sorry, I couldn't find an answer to that question.")
-            sources = result.get("sources", [])
-
-            # Format response
-            reply = answer
-
-            # Add sources if available
-            if sources and len(sources) > 0:
-                unique_sources = list(set(sources))  # Remove duplicates
-                reply += f"\n\n📚 **Sources:** {', '.join(unique_sources)}"
-
-            await turn_context.send_activity(reply)
-
+            pack = generate_info_pack(notes)
+            return render_template_string(PAGE, pack=pack, notes=notes, error=None)
         except Exception as e:
-            print(f"Error: {e}")
-            await turn_context.send_activity(
-                "Sorry, something went wrong. Please try again later."
+            return render_template_string(
+                PAGE, pack=None, notes=notes, error=f"Error generating info pack: {e}"
             )
-
-    elif turn_context.activity.type == ActivityTypes.conversation_update:
-        # Welcome new users
-        if turn_context.activity.members_added:
-            for member in turn_context.activity.members_added:
-                if member.id != turn_context.activity.recipient.id:
-                    welcome_message = (
-                        "👋 Hi! I'm **Training Tessa**, your Meraki Talent training assistant.\n\n"
-                        "Ask me anything about:\n"
-                        "• Company policies and procedures\n"
-                        "• Training materials and guides\n"
-                        "• Best practices and processes\n\n"
-                        "Just type your question and I'll search our training documents for the answer!"
-                    )
-                    await turn_context.send_activity(welcome_message)
-
-
-def run_async(coro):
-    """Run async function in sync context."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
-@app.route("/api/messages", methods=["POST"])
-def messages():
-    """Main endpoint for Bot Framework messages."""
-    if "application/json" in request.content_type:
-        body = request.json
-        activity = Activity().deserialize(body)
-        auth_header = request.headers.get("Authorization", "")
-
-        async def call_on_turn(turn_context: TurnContext):
-            await on_turn(turn_context)
-
-        task = get_adapter().process_activity(activity, auth_header, call_on_turn)
-        run_async(task)
-
-        return jsonify({"status": "ok"})
-
-    return jsonify({"error": "Unsupported content type"}), 415
+    return render_template_string(PAGE, pack=None, notes="", error=None)
 
 
 @app.route("/health", methods=["GET"])
 def health():
-    """Health check endpoint."""
-    return jsonify({"status": "healthy", "bot": "Training Tessa"})
-
-
-@app.route("/", methods=["GET"])
-def home():
-    """Root endpoint."""
-    return jsonify({
-        "bot": "Training Tessa",
-        "description": "Meraki Talent Training Assistant",
-        "status": "running"
-    })
+    return {"status": "healthy", "bot": "Info Pack Bot"}
 
 
 if __name__ == "__main__":
