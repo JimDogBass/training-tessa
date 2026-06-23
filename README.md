@@ -1,14 +1,19 @@
 # Interview Prep Bot - Meraki Talent
 
-A small Flask web app that turns recruiter notes into a candidate-facing info pack, with recent news on the firm pulled in via Google Search grounding.
+A small Flask app that turns recruiter notes into a candidate-facing info pack, with recent news on the firm pulled in via Google Search grounding.
 
-## What it does
+## Two surfaces
 
-1. Consultant pastes raw recruiter notes (firm description, role, team, comp, internal colour) into a web form.
-2. Gemini 2.5 Pro strips the internal stuff, structures the rest into the standard info pack template, and uses Google Search to add a Recent news block with real URLs.
-3. Plain-text pack rendered on the page with a Copy-to-Clipboard button.
+1. **Teams chat** — message the bot ("Training Tessa" in Teams, behind `/api/messages`) with your raw notes, get the pack back in chat.
+2. **Web form** — open the root URL in a browser, paste notes, click Generate, copy the result.
 
-Compensation is never included. No closing line or signoff is added; the recruiter writes their own. No database, no Teams plumbing, no automated sending.
+Both call the same `generate_info_pack()` and use the same system prompt.
+
+## How it works
+
+Recruiter pastes raw notes (firm description, role, team, comp, internal colour). Gemini 2.5 Pro strips the internal stuff, structures the rest into the standard info pack template, and uses Google Search to add a Recent news block. Redirect URLs from grounding are resolved server-side to the real publication URLs.
+
+Compensation is never included. No closing line or signoff is added; the recruiter writes their own.
 
 The output template, banned-phrase list and strip-internal rules all live in `SYSTEM_PROMPT` in `app.py` — edit there.
 
@@ -22,8 +27,11 @@ The output template, banned-phrase list and strip-internal rules all live in `SY
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `GEMINI_API_KEY` | Yes | Google Gemini API key |
+| `MICROSOFT_APP_ID` | Yes (Teams) | Azure Bot App ID |
+| `MICROSOFT_APP_PASSWORD` | Yes (Teams) | Azure Bot client secret |
+| `MICROSOFT_APP_TENANT_ID` | Yes (Teams) | Azure Bot tenant ID |
 
-Old Tessa env vars (`MICROSOFT_APP_*`, `SUPABASE_*`) are no longer used and can be deleted from the Railway Variables tab.
+`SUPABASE_*` vars are no longer used and can be deleted from the Railway Variables tab.
 
 ## Customising the email style
 

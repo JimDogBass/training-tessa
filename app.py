@@ -6,13 +6,30 @@ Web form: paste recruiter notes, get a candidate-facing info pack with recent ne
 
 import os
 import re
+import asyncio
 import httpx
 from concurrent.futures import ThreadPoolExecutor
-from flask import Flask, request, render_template_string
+from flask import Flask, request, jsonify, render_template_string
+from botbuilder.core import BotFrameworkAdapter, BotFrameworkAdapterSettings, TurnContext
+from botbuilder.schema import Activity, ActivityTypes
 from google import genai
 from google.genai import types
 
 app = Flask(__name__)
+
+ADAPTER = None
+
+
+def get_adapter():
+    global ADAPTER
+    if ADAPTER is None:
+        settings = BotFrameworkAdapterSettings(
+            app_id=os.environ.get("MICROSOFT_APP_ID"),
+            app_password=os.environ.get("MICROSOFT_APP_PASSWORD"),
+            channel_auth_tenant=os.environ.get("MICROSOFT_APP_TENANT_ID"),
+        )
+        ADAPTER = BotFrameworkAdapter(settings)
+    return ADAPTER
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GEMINI_MODEL = "gemini-2.5-pro"
@@ -182,6 +199,65 @@ def generate_info_pack(notes):
         ),
     )
     return resolve_redirect_urls(strip_code_fence(response.text))
+
+
+WELCOME_MESSAGE = (
+    "Hi! I'm the Meraki Info Pack Bot.\n\n"
+    "Paste your recruiter notes about a firm and role (firm description, fund history, "
+    "team, comp, internal colour - all mixed together is fine) and I'll draft a "
+    "candidate-facing info pack with recent news.\n\n"
+    "Compensation is never included, and I don't add a signoff at the end - write your own."
+)
+
+
+async def on_turn(turn_context: TurnContext):
+    if turn_context.activity.type == ActivityTypes.message:
+        notes = (turn_context.activity.text or "").strip()
+        if not notes:
+            await turn_context.send_activity(WELCOME_MESSAGE)
+            return
+
+        await turn_context.send_activity(Activity(type=ActivityTypes.typing))
+
+        try:
+            pack = generate_info_pack(notes)
+            await turn_context.send_activity(pack or "Sorry, I couldn't generate a pack from those notes.")
+        except Exception as e:
+            print(f"Error generating info pack: {e}")
+            await turn_context.send_activity(
+                "Sorry, something went wrong generating the info pack. Please try again."
+            )
+
+    elif turn_context.activity.type == ActivityTypes.conversation_update:
+        if turn_context.activity.members_added:
+            for member in turn_context.activity.members_added:
+                if member.id != turn_context.activity.recipient.id:
+                    await turn_context.send_activity(WELCOME_MESSAGE)
+
+
+def run_async(coro):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+@app.route("/api/messages", methods=["POST"])
+def messages():
+    if "application/json" not in (request.content_type or ""):
+        return jsonify({"error": "Unsupported content type"}), 415
+
+    body = request.json
+    activity = Activity().deserialize(body)
+    auth_header = request.headers.get("Authorization", "")
+
+    async def call_on_turn(turn_context: TurnContext):
+        await on_turn(turn_context)
+
+    run_async(get_adapter().process_activity(activity, auth_header, call_on_turn))
+    return jsonify({"status": "ok"})
 
 
 @app.route("/", methods=["GET", "POST"])
